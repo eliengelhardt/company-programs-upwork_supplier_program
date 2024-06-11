@@ -212,11 +212,11 @@ def initialize_alibaba_search():
     else:
         #Sign in
         try:
-            sign_in_button_xpath = '/html/body/div[1]/div[1]/div[1]/div/div[1]/div[2]/div[2]/div[3]/div[1]/span'
-            sign_in_button = wait.until(EC.element_to_be_clickable(By.XPATH, sign_in_button_xpath))
+            sign_in_button_class = 'tnh-sign-in'
+            sign_in_button = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, sign_in_button_class)))
             sign_in_button.click()
         except Exception as e:
-            
+            x = input(f"{e}")
             raise ValueError("Sign in button not found") 
 
         #Click login with email
@@ -224,17 +224,17 @@ def initialize_alibaba_search():
         try:
             email = 'Your email'
             password = 'Your password'
-            login_with_email_xpath = '/html/body/div[3]/div[2]/div[2]/div[1]/div/form/div[4]/dl[1]/dd/div/input'
-            password_xpath = '/html/body/div[3]/div[2]/div[2]/div[1]/div/form/div[4]/dl[2]/dd/div/input'
-            login_text_box = wait.until(EC.element_to_be_clickable((By.XPATH, login_with_email_xpath)))
-            password_text_box = wait.until(EC.element_to_be_clickable((By.XPATH, password_xpath)))
+            login_with_email_css = '.sif_form.sif_form-account'
+            password_css = '.sif_form.sif_form-password'
+            login_text_box = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, login_with_email_css)))
+            password_text_box = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, password_css)))
             login_text_box.click()
             login_text_box.send_keys(email)
             login_text_box.send_keys(Keys.TAB)
             password_text_box.send_keys(password)
             password_text_box.send_keys(Keys.RETURN)
         except Exception as e:
-            
+            x = input(f"{e}")
             raise ValueError("Login text box not found") 
         
         random_sleep(0, 2)
