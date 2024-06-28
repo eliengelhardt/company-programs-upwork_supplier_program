@@ -38,7 +38,7 @@ def is_json(variable):
 load_dotenv()
 
 # Now you can access the API key using os.getenv
-api_key = "Ask for API key"
+# api_key = "Ask for API key"
 
 #Global Variables
 max_wait_time = 60
