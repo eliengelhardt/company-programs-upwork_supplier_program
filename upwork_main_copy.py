@@ -5,8 +5,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import ElementClickInterceptedException
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException, ElementClickInterceptedException
 from screeninfo import get_monitors
 import undetected_chromedriver as uc
 import openpyxl as pyxl
@@ -18,9 +18,30 @@ import requests
 import pickle
 import os
 import threading
+import inspect
+from dotenv import load_dotenv
+
+import gspread
+from gspread_formatting import *
+from oauth2client.service_account import ServiceAccountCredentials
+import json
+from enum import Enum
+
+def is_json(variable):
+    try:
+        json.loads(variable)
+    except (TypeError, json.JSONDecodeError):
+        return False
+    return True
+
+# Load the .env file
+load_dotenv()
+
+# Now you can access the API key using os.getenv
+api_key = "sk-proj-3r0BfW5phKYYGOjHTRRNT3BlbkFJfaOoAV8i8HP550P7Lug0"
 
 #Global Variables
-max_wait_time = 10
+max_wait_time = 60
 number_of_suppliers_to_contact = 2
 max_retries = 5
 chat_product_dict = {} #Key: supplier name, Value: list queue of product tuples (first is current product chat)
@@ -28,6 +49,7 @@ chat_step_dict = {} #Key: supplier name, Value: dictionary key: index, value is 
 chat_product_lock = threading.Lock()
 chat_step_lock = threading.Lock()
 index_step_dict_lock = threading.Lock()
+excel_lock = threading.Lock()
 chat_dict_loc = "chat_product_dict.pkl"
 chat_step_dict_loc = "chat_step_dict.pkl"
 
@@ -142,32 +164,37 @@ def query_openai(prompt, model, max_retries=max_retries):
     base_wait = 1  # Base wait time in seconds
 
     #Obtain OpenAI API Access
-    client = OpenAI()
+    client = OpenAI(api_key=api_key)
 
     for i in range(max_retries):
         try:
             if model == "titles":
                 #Get simplified titles
                 response = client.chat.completions.create(
-                model="ft:gpt-3.5-turbo-0125:personal:simplified-titles:96s6KQpr",
+                # model="ft:gpt-3.5-turbo-0125:personal:simplified-titles:96s6KQpr",
+                model="gpt-4o-2024-05-13",
                 messages=[
                     {"role": "system", "content": "You are a program that needs to return a list of simplified titles from an 'Initial title' and must abide by the given rules. Rule 1: Begin with the 'Initial title' and with each iteration make the simplified title generated less detailed (less characters). Rule 2: In the list of simplified titles returned, have the simplified titles ordered from 1) most detailed (most characters) to 10) least detailed (least characters). Rule 3: Only return simplified titles that are less than 50 characters in total length. Rule 4: Return 10 simplified titles. Rule 5: Do not include character count in the simplified titles. Rule 6: Exclude any brand names from the returned simplified titles unless the product is specific for a brand such as 'brand replacement parts'."},
                     {"role": "user", "content": f"{prompt}"}
                 ]
                 )
-            elif model == "chat_bot":
+            elif model == "analysing":
 
                 current_questions, supplier_response = prompt
+                print(f'[175] f = {current_questions}')
+                print(f'[176] s = {supplier_response}')
 
                 messages=[
-                    {"role": "system", "content": f"You are a chatbot that confirms or denies whether these questions have been answered: {current_questions}. Return 'Confirm: ' followed by which question index(s) was answered and what the answer for the specific question was. For example 'Confirm: 1: Yes we sell that'. Return 'PASS' if no question was answered. Return 'PICTURE' if the supplier needs a picture of the product."},
+                    {"role": "system", "content": "The input is answer of supplier about it. First, Analyse supplier's answer and seventh answer must be set 'picture' if the supplier needs a picture of the product." + " basic questions are choosen among 7 as below. 1. Are you selling {product_name}? 2. What is the EXW price for {quantity} units? 3. Can I get a sample? 4. What are the package dimensions? 5. What is the package weight for {quantity} units? 6. Does the product come unbranded? 7. Would I be able to get a picture? There can be each different content in product_name, quantity. The result should be following only the JSON Style. output order should be same like order of inputed basic question. The element count of JSON structure of output style follow basic question count. Below is the case where there are 7 questions in the basic question. Output style: {1: value1, 2: value2, 3: value3, 4: value4, 5: value5, 6: value6, 7: value7} note: - Indexes of Output must always start from number 1, not string. - value1 should be 'yes', 'no' or 'unsure' string. - value2 should be only number value or 'unsure' string if a exact numerical value is provided, the answer is maximum of those values. - value3 should be 'yes', 'no' or 'unsure' string. - value4 should be general sentence or 'unsure' string if answer of suppiler is placeholder or not a exact numerical value, the answer is 'unsure' string. - value5 should be general sentence or 'unsure' string if answer of suppiler is placeholder or not a exact numerical value, the answer is 'unsure' string. - value6 should be 'yes', 'no' or 'unsure' string. - value7 should be 'yes', 'no', 'picture' or 'unsure' string."},
                     {"role": "user", "content": supplier_response}
                 ]
 
                 response = client.chat.completions.create(
-                model="gpt-4-turbo",
-                messages=messages
+                    model="gpt-4o-2024-05-13",
+                    messages=messages,
+                    response_format={"type": "json_object"}
                 )
+                print(f"[188] response = {response}")
             return response.choices[0].message.content
         except OpenAI.RateLimitError:
             wait_time = base_wait * math.pow(2, i)  # Exponential backoff formula
@@ -196,12 +223,13 @@ def initialize_alibaba_search():
     screenWidth = monitor.width
     wait = WebDriverWait(driver, max_wait_time)
     driver.set_window_size(screenWidth * 0.75, screenHeight)
-    driver.set_window_position((-1) * screenWidth, 0)
+    # driver.set_window_position((-1) * screenWidth, 0)
     driver.get('https://www.alibaba.com/')
 
     # Load and add cookies from the file
     if os.path.exists("alibaba_login_cookies.pkl"):
         with open("alibaba_login_cookies.pkl", "rb") as cookies_file:
+            print("Loading cookies...")
             cookies = pickle.load(cookies_file)
             for cookie in cookies:
                 driver.add_cookie(cookie)
@@ -209,33 +237,34 @@ def initialize_alibaba_search():
         #Reload View
         random_sleep(0, 1)
         driver.get('https://www.alibaba.com/')
+        print("Reload view with cookies")
     else:
         #Sign in
         try:
-            sign_in_button_class = 'tnh-sign-in'
-            sign_in_button = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, sign_in_button_class)))
-            sign_in_button.click()
+            driver.get('https://login.alibaba.com/newlogin/icbuLogin.htm?return_url=https%3A%2F%2Fwww.alibaba.com%2F&_lang=')
         except Exception as e:
-            x = input(f"{e}")
-            raise ValueError("Sign in button not found") 
+            raise ValueError(f"Sign in button not found, exception: {e}")
 
         #Click login with email
         random_sleep(0, 2)
         try:
-            email = 'Your email'
-            password = 'Your password'
+            email = 'eliengelhardt@gmail.com'
+            password = 'Whiteout123'
             login_with_email_css = '.sif_form.sif_form-account'
             password_css = '.sif_form.sif_form-password'
+            submit_btn_xpath = "//button[contains(@class, 'sif_form-submit')]"
+
             login_text_box = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, login_with_email_css)))
             password_text_box = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, password_css)))
+            submit_btn = wait.until(EC.element_to_be_clickable((By.XPATH, submit_btn_xpath)))
+
             login_text_box.click()
             login_text_box.send_keys(email)
-            login_text_box.send_keys(Keys.TAB)
             password_text_box.send_keys(password)
-            password_text_box.send_keys(Keys.RETURN)
+            submit_btn.click()
+
         except Exception as e:
-            x = input(f"{e}")
-            raise ValueError("Login text box not found") 
+            raise ValueError(f"Login text box not found, exception: {e}")
         
         random_sleep(0, 2)
         cookies = driver.get_cookies()
@@ -248,29 +277,29 @@ def initialize_alibaba_search():
 def final_input_interaction(driver, wait, description_tuple, supplier_name):
 
     #Get product info
-    quantity, rfq_product_name, image_url, max_exw_price = description_tuple
+    quantity, rfq_product_name, image_url, max_exw_price, max_size = description_tuple
 
     #Input RFQ Quantity
     random_sleep(0, 1)
-    rfq_quantity_input_class = "//span[contains(@class, 'next-input') and contains(@class, 'next-small') and contains(@class, 'next-noborder')]/input"
+    rfq_quantity_input_xpath = "//span[contains(@class, 'next-input') and contains(@class, 'next-small') and contains(@class, 'next-noborder')]/input"
     try:
-        rfq_quantity_input = wait.until(EC.element_to_be_clickable((By.XPATH, rfq_quantity_input_class)))
+        rfq_quantity_input = driver.find_element(By.XPATH, rfq_quantity_input_xpath)
         rfq_quantity_input.click()
         random_sleep(0, 1)
-        rfq_quantity_input.clear()
+        driver.execute_script("arguments[0].value = '';", rfq_quantity_input)
         random_sleep(0, 1)
         rfq_quantity_input.send_keys(quantity)
     except Exception as e:
-        rfq_quantity_input_class = "//div[contains(@class, 'quantity-wrap')]/input"
+        rfq_quantity_input_xpath = "//div[contains(@class, 'quantity-wrap')]/input"
         try:
-            rfq_quantity_input = wait.until(EC.element_to_be_clickable((By.XPATH, rfq_quantity_input_class)))
+            rfq_quantity_input = driver.find_element(By.XPATH, rfq_quantity_input_xpath)
             rfq_quantity_input.click()
             random_sleep(0, 1)
-            rfq_quantity_input.clear()
+            driver.execute_script("arguments[0].value = '';", rfq_quantity_input)
             random_sleep(0, 1)
             rfq_quantity_input.send_keys(quantity)
         except Exception as e:
-            print(f"No rfq quantity when contacting supplier found exception: {e}")
+            print(f"No RFQ quantity input found when contacting supplier, exception: {e}")
             return True
     
     #Input RFQ Inquiry
@@ -278,90 +307,96 @@ def final_input_interaction(driver, wait, description_tuple, supplier_name):
     inquiry_input_id = "inquiry-content"
     inquiry_message = f"Hello, I am interested in purchasing the following product: {rfq_product_name}. Could you please provide me with a quote?"
     try:
-        inquiry_input = wait.until(EC.element_to_be_clickable((By.ID, inquiry_input_id)))
+        inquiry_input = driver.find_element(By.ID, inquiry_input_id)
         inquiry_input.click()
         random_sleep(0, 1)
         inquiry_input.send_keys(inquiry_message)
     except Exception as e:
         inquiry_input_xpath = "//textarea[contains(@class, 'content-input')]"
         try:
-            inquiry_input = wait.until(EC.element_to_be_clickable((By.XPATH, inquiry_input_xpath)))
+            inquiry_input = driver.find_element(By.XPATH, inquiry_input_xpath)
             inquiry_input.click()
             random_sleep(0, 1)
             inquiry_input.send_keys(inquiry_message)
         except Exception as e:
-            print(f"No inquiry input when contacting supplier exception: {e}") 
+            print(f"No inquiry input found when contacting supplier, exception: {e}")
             return True
     
-    #Download Image to sen
+    #Download Image to send
     image_download_iter = 0
     current_dir = os.path.dirname(os.path.abspath(__file__))
     tmp_file_path = os.path.join(current_dir, "tmp_image.jpg")
     while True:
-        random_sleep(1, 2)
-        image_response = requests.get(image_url)
-        if image_response.status_code == 200:
-            with open(tmp_file_path, 'wb') as tmp_file:
-                tmp_file.write(image_response.content)
-            break
-        else:
-            if image_download_iter > max_retries:
-                print(f"Didn't download image for contacting supplier exception: {e}") 
-                return True
-            image_download_iter += 1
+        try:
+            random_sleep(1, 2)
+            image_response = requests.get(image_url, timeout=10)  # Add timeout
+            if image_response.status_code == 200:
+                with open(tmp_file_path, 'wb') as tmp_file:
+                    tmp_file.write(image_response.content)
+                break
+            else:
+                print(f"Error: Received status code {image_response.status_code} for URL {image_url}")
+        except requests.exceptions.RequestException as e:
+            print(f"Attempt {image_download_iter + 1} failed: {e}")
+        if image_download_iter > max_retries:
+            print(f"Failed to download image after {max_retries} attempts")
+            return True
+        image_download_iter += 1
 
     #Input RFQ Image
     random_sleep(0, 1)
     image_input_id = "ksu-fileserver-1"
     try:
-        image_input = wait.until(EC.presence_of_element_located((By.ID, image_input_id)))
+        image_input = driver.find_element(By.ID, image_input_id)
+        driver.execute_script("arguments[0].scrollIntoView();", image_input)
         image_input.send_keys(tmp_file_path)
     except Exception as e:
         image_input_xpath = "/html/body/div[1]/div/div/div/div[2]/div[2]/div/div[1]/input"
         try:
-            image_input = wait.until(EC.presence_of_element_located((By.XPATH, image_input_xpath)))
+            image_input = driver.find_element(By.XPATH, image_input_xpath)
+            driver.execute_script("arguments[0].scrollIntoView();", image_input)
             image_input.send_keys(tmp_file_path)
         except Exception as e:
-            print(f"Couldn't send image when contacting supplier exception: {e}") 
+            print(f"Failed to send image when contacting supplier, exception: {e}")
             return True
         
     #Send Inquiry
     random_sleep(0, 1)
     send_inquiry_button_xpath = "/html/body/div[1]/div/div/div/div[3]/button"
     try:
-        send_inquiry_button = wait.until(EC.element_to_be_clickable((By.XPATH, send_inquiry_button_xpath)))
+        send_inquiry_button = driver.find_element(By.XPATH, send_inquiry_button_xpath)
         send_inquiry_button.click()
     except Exception as e:
         send_inquiry_button_xpath = "/html/body/div[2]/div/form/div[1]/div[2]/div/div/div[2]/input"
         try:
-            send_inquiry_button = wait.until(EC.element_to_be_clickable((By.XPATH, send_inquiry_button_xpath)))
+            send_inquiry_button = driver.find_element(By.XPATH, send_inquiry_button_xpath)
             send_inquiry_button.click()
             send_inquiry_button.click()
         except Exception as e:
-            print(f"Couldn't send inquiry for supplier exception: {e}") 
+            print(f"Failed to send inquiry for supplier, exception: {e}")
             return True
 
     #See if successful and delete temp file
-    random_sleep(1, 2)
-    succeded_page_id = "alitalk-dialog-inquiry-succeed"
+    random_sleep(3, 4)
+    succeeded_page_id = "alitalk-dialog-inquiry-succeed"
     try:
         driver.switch_to.default_content()
-        wait.until(EC.presence_of_element_located((By.ID, succeded_page_id)))
+        driver.find_element(By.ID, succeeded_page_id)
         if os.path.exists(tmp_file_path):
             os.remove(tmp_file_path)
     except Exception as e:
-        succeded_page_icon = "//i[contains(@class, 'ui2-icon-success')]"
+        succeeded_page_icon_xpath = "//i[contains(@class, 'ui2-icon-success')]"
         try:
-            wait.until(EC.presence_of_element_located((By.XPATH, succeded_page_icon)))
+            driver.find_element(By.XPATH, succeeded_page_icon_xpath)
             if os.path.exists(tmp_file_path):
                 os.remove(tmp_file_path)
         except Exception as e:
-            print(f"Didn't have successful inquiry for supplier exception: {e}") 
+            print(f"Failed to confirm successful inquiry for supplier, exception: {e}")
             return True
 
     #Add chat product history (initial chat not included in chat since should be included in steps)
     with chat_product_lock:
-        print(f"Adding to product dict supplier : {supplier_name}")
+        print(f"Adding to product dict for supplier : {supplier_name}")
         chat_product_dict[supplier_name] = []
         chat_product_dict[supplier_name].append(description_tuple)
 
@@ -380,7 +415,7 @@ def final_input_interaction(driver, wait, description_tuple, supplier_name):
             break
         except Exception as e:
             if change_win_iter > max_retries:
-                print(f"Couldn't change windows for contacting supplier exception: {e}") 
+                print(f"Failed to switch windows after contacting supplier, exception: {e}")
                 return True
             change_win_iter += 1
     
@@ -414,121 +449,47 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
         random_sleep(1, 2)
         search_input_box.send_keys(Keys.RETURN)
     except Exception as e:
-        
-        raise ValueError("Search input box not found exception: {e}") 
+        print(f"Search input box not found, exception: {e}")
+        return supplier_set
     
     random_sleep(2, 3)
+
+
     supplier_name_class = "search-card-e-company"
-    try:
-        text_elements = wait.until(EC.visibility_of_all_elements_located((By.CLASS_NAME, supplier_name_class)))
-    except Exception as e:
-        
-        raise ValueError(f"No name of supplier found search term: {search_term} exception: {e}") 
-    
+    retry_attempts = 0
+
+    while retry_attempts < max_retries:
+        try:
+            text_elements = wait.until(EC.visibility_of_all_elements_located((By.CLASS_NAME, supplier_name_class)))
+            break  # Exit loop if successful
+        except TimeoutException as e:
+            retry_attempts += 1
+            print(f"Attempt {retry_attempts} failed: {e}")
+            if retry_attempts >= max_retries:
+                # Print page source for debugging
+                page_source = driver.page_source
+                with open("debug_page_source.html", "w", encoding="utf-8") as f:
+                    f.write(page_source)
+                return supplier_set
+                # raise ValueError(f"No supplier names found for search term: {search_term}, exception: {e}") 
+            time.sleep(2 ** retry_attempts)  # Exponential backoff
+
+    if not text_elements:
+        raise ValueError(f"No text elements found for search term: {search_term}")
+
     random_sleep(0, 1)
     supplier_image_class = "search-card-e-slider__wrapper"
     try:
         image_elements = wait.until(EC.visibility_of_all_elements_located((By.CLASS_NAME, supplier_image_class)))
     except Exception as e:
         
-        raise ValueError(f"No image of supplier found search term: {search_term} exception: {e}") 
+        raise ValueError(f"No supplier images found for search term: {search_term}, exception: {e}")
 
     #Contact suppliers button on first page
     random_sleep(0, 1)
-    contact_suppliers_buttons = []
-    try:
-        contact_suppliers_button_class = "//a[contains(@class, 'search-card-e-abutton') and contains(@class, 'search-card-e-action-abutton') and contains(@class, 'search-card-e-contact-supplier') and contains(@class, 'search-card-e-abutton-large')]"
-        contact_suppliers_buttons = wait.until(EC.visibility_of_all_elements_located((By.XPATH, contact_suppliers_button_class)))
-    except Exception as e:
-        print(f"No contact suppliers button found search term: {search_term} exception: {e}")
 
-
-    #Contact suppliers
     current_supplier_index = 0
     for _ in range(number_of_suppliers_to_contact):
-
-        #iterate over contact suppliers
-        for contact_button in contact_suppliers_buttons:
-            random_sleep(0, 3)
-            try:
-                contact_button.click()
-            except ElementClickInterceptedException:
-                actions = ActionChains(driver)
-                actions.move_to_element(contact_button).perform()
-                random_sleep(0, 1)
-                contact_button.click()
-            except Exception as e:
-                raise ValueError(f"Couldn't click contact supplier button search term: {search_term} exception: {e}")
-            
-            #Switch window view
-            random_sleep(2, 3)
-            change_win_iter = 0
-            while True:
-                random_sleep(1, 2)
-                try:
-                    if len(driver.window_handles) > 1:
-                        driver.switch_to.window(driver.window_handles[1])
-                    break
-                except Exception as e:
-                    if change_win_iter > max_retries:
-                        
-                        raise ValueError(f"Couldn't change windows for contacting supplier search term: {search_term} index: {j} exception: {e}") 
-                    change_win_iter += 1
-            
-            #Get supplier name
-            supplier_name_class = "company-name"
-            try:
-                text_element = wait.until(EC.presence_of_element_located((By.CLASS_NAME, supplier_name_class)))
-            except Exception as e:
-                
-                raise ValueError(f"No name of supplier found exception: {e}") 
-            
-            supplier_name = text_element.text
-            if supplier_name not in supplier_set:
-                supplier_set.add(supplier_name)
-
-                #See if supplier is already in chat
-                quantity = rfq_info[0]
-                rfq_product_name = rfq_info[1]
-                image_url = rfq_info[2]
-                max_exw_price = rfq_info[3]
-                description_tuple = (quantity, rfq_product_name, image_url, max_exw_price)
-                with chat_product_lock:
-                    if supplier_name in chat_product_dict:
-                        current_chat_list = len(chat_product_dict[supplier_name])
-                        if current_chat_list != 0:
-                            #Don't contact yet if supplier is already in chat
-                            chat_product_dict[supplier_name].append(description_tuple)
-                            break
-                
-                errors = final_input_interaction(driver, wait, description_tuple, supplier_name)
-                if errors:
-                    check_error = input("Error in sending message. Continue? (y/n)")
-                    if check_error.lower() == 'n':
-                        driver.quit()
-                
-                break
-            else:
-                #Close inquiry tab
-                random_sleep(0, 1)
-                change_win_iter = 0
-                while True:
-                    random_sleep(0, 1)
-                    try:
-                        if len(driver.window_handles) > 1:
-                            driver.close()
-                            driver.switch_to.window(driver.window_handles[0])
-                        break
-                    except Exception as e:
-                        if change_win_iter > max_retries:
-                            print(f"Couldn't change windows for contacting supplier exception: {e}") 
-                            return True
-                        change_win_iter += 1
-
-            
-
-
-
         for j in range(current_supplier_index, len(text_elements)):
             #Close inquiry tab if any
             change_win_iter = 0
@@ -541,15 +502,18 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
                     break
                 except Exception as e:
                     if change_win_iter > max_retries:
-                        print(f"Couldn't change windows for contacting supplier exception: {e}") 
-                        return True
+                        print(f"Failed to switch windows after contacting supplier2, exception: {e}")
+                        return supplier_set
                     change_win_iter += 1
 
             try:
+                driver.execute_script("arguments[0].scrollIntoView();", text_elements[j])
                 supplier_name = text_elements[j].text
             except Exception as e:
-                print(f"Couldn't get supplier name search term: {search_term} index: {j} exception: {e}")
-                x = input("Continue?")
+                print(f"Failed to get supplier name for search term: {search_term}, index: {j}, exception: {e}")
+                continue
+            
+            random_sleep(0, 1)
             if supplier_name not in supplier_set:
                 #Store supplier to avoid duplicates
                 current_supplier_index = j
@@ -560,25 +524,30 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
                 rfq_product_name = rfq_info[1]
                 image_url = rfq_info[2]
                 max_exw_price = rfq_info[3]
-                description_tuple = (quantity, rfq_product_name, image_url, max_exw_price)
+                max_size = rfq_info[4]
+                description_tuple = (quantity, rfq_product_name, image_url, max_exw_price, max_size)
                 with chat_product_lock:
                     if supplier_name in chat_product_dict:
                         current_chat_list = len(chat_product_dict[supplier_name])
                         if current_chat_list != 0:
                             #Don't contact yet if supplier is already in chat
-                            chat_product_dict[supplier_name].append(description_tuple)
+                            # chat_product_dict[supplier_name].append(description_tuple)
+                            print("image_button_break")
                             break
                     #Else statements for adding to product dict is later to ensure message is sent
 
                 #Contact supplier
                 random_sleep(1, 2)
+
                 try:
+                    driver.execute_script("arguments[0].scrollIntoView();", image_elements[j])
                     image_elements[j].click()
                 except Exception as e:
-                    
-                    raise ValueError(f"Couldn't click image of supplier search term: {search_term} index: {j} exception: {e}") 
+
+                    raise ValueError(f"Failed to click supplier image for search term: {search_term}, index: {j}, exception: {e}")
 
                 #Switch window view
+                print("#Switch window view")
                 random_sleep(2, 3)
                 change_win_iter = 0
                 while True:
@@ -590,28 +559,30 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
                     except Exception as e:
                         if change_win_iter > max_retries:
                             
-                            raise ValueError(f"Couldn't change windows for contacting supplier search term: {search_term} index: {j} exception: {e}") 
+                            raise ValueError(f"Failed to switch windows after contacting supplier for search term: {search_term}, index: {j}, exception: {e}")
                         change_win_iter += 1
 
                 #Click Contact Supplier button
-                last_height = 0
+                isNoSuchElement = 0
+                btn_click_iter = 0
                 while True:
-                    #Scroll down page
-                    pixel_increment = 100
-                    new_height = last_height + pixel_increment
-                    driver.execute_script(f"window.scrollTo(0, {new_height});")
                     random_sleep(0, 1)
-                    contact_supplier_button_selector = "button[data-type-btn='inquiry']"
                     try:
-                        contact_button = driver.find_element(By.CSS_SELECTOR, contact_supplier_button_selector)
+                        contact_supplier_button_xpath = "//button[@data-type-btn='inquiry']"
+                        contact_button = driver.find_element(By.XPATH, contact_supplier_button_xpath)
                         contact_button.click()
                         break
                     except Exception as e:
-                        if new_height >= max_retries * pixel_increment:
-                            
-                            raise ValueError(f"No contact_button for supplier found search term: {search_term} index: {j} exception: {e}") 
-                        last_height = new_height
-                
+                        if btn_click_iter >= max_retries:
+                            isNoSuchElement = 1
+                            break
+                        time.sleep(3)
+                        print("3 sec later, will retry...")
+                        btn_click_iter += 1
+
+                if isNoSuchElement == 1:
+                    continue
+
                 #Change to iframe
                 popup_iter = 0
                 while True:
@@ -624,14 +595,16 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
                     except Exception as e:
                         if popup_iter > max_retries:
                             
-                            raise ValueError(f"Didn't change to supplier popup search term: {search_term} index: {j} exception: {e}") 
+                            raise ValueError(f"Failed to switch to supplier popup for search term: {search_term}, index: {j}, exception: {e}") 
                         popup_iter += 1
                 
                 errors = final_input_interaction(driver, wait, description_tuple, supplier_name)
                 if errors:
-                    check_error = input("Error in sending message. Continue? (y/n)")
-                    if check_error.lower() == 'n':
-                        driver.quit()
+                    print("Error in sending message2. Continue? (y/n)")
+                    pass
+                    # check_error = input("Error in sending message2. Continue? (y/n)")
+                    # if check_error.lower() == 'n':
+                        # driver.quit()
 
                 break
 
@@ -648,20 +621,21 @@ def create_chat_steps(supplier_name):
         if supplier_name in chat_product_dict:
             product_tuple = chat_product_dict[supplier_name]
             product_name = ""
-            quantity = 0
+            quantity = 0 
             if isinstance(product_tuple, list):
                 quantity = product_tuple[0][0]
                 product_name = product_tuple[0][1]
             else:
                 quantity = product_tuple[0]
                 product_name = product_tuple[1]
-     
 
             #See if chat steps already exist
             if supplier_name in chat_step_dict:
+                print(f"Chat steps already exist for supplier: {supplier_name}")
                 current_step_dict = chat_step_dict[supplier_name]
-                return current_step_dict
-            else:                
+                return {supplier_name: current_step_dict}
+            else:
+                print(f"Creating new chat steps for supplier: {supplier_name}")
                 #Add preset steps
                 confirm = f"Are you selling {product_name}?"
                 exw_price_step = f"What is the EXW price for {quantity} units?"
@@ -671,12 +645,20 @@ def create_chat_steps(supplier_name):
                 package_weight_step = f"What is the package weight for {quantity} units?"
                 product_brand_step = "Does the product come unbranded?"
                 picture = "Would I be able to get a picture?"
-                spec_steps = {1: confirm, 2: exw_price_step, 3: sample, 4: package_dim_step, 5: package_weight_step, 6: product_brand_step, 7: picture}
+                spec_steps = {
+                    confirm: 'unsure',
+                    exw_price_step: 'unsure',
+                    sample: 'unsure',
+                    package_dim_step: 'unsure',
+                    package_weight_step: 'unsure',
+                    product_brand_step: 'unsure',
+                    picture: 'unsure'
+                }
                 chat_step_dict[supplier_name] = spec_steps
                 async_thread = threading.Thread(target=write_dict_to_file, args=(chat_step_dict_loc, chat_step_dict, chat_step_lock))
                 async_thread.start()
 
-                return spec_steps
+                return {supplier_name: spec_steps}
             
         else:
             raise ValueError(f"Supplier: {supplier_name} not in chat_product_dict")
@@ -698,17 +680,21 @@ def resend_image(driver, supplier_name):
             current_dir = os.path.dirname(os.path.abspath(__file__))
             tmp_file_path = os.path.join(current_dir, "tmp_image.jpg")
             while True:
-                random_sleep(1, 2)
-                image_response = requests.get(image_url)
-                if image_response.status_code == 200:
-                    with open(tmp_file_path, 'wb') as tmp_file:
-                        tmp_file.write(image_response.content)
-                    break
-                else:
-                    if image_download_iter > max_retries:
-                        
-                        raise ValueError(f"Didn't download image for resending image") 
-                    image_download_iter += 1
+                try:
+                    random_sleep(1, 2)
+                    image_response = requests.get(image_url, timeout=10)  # Add timeout for better control
+                    if image_response.status_code == 200:
+                        with open(tmp_file_path, 'wb') as tmp_file:
+                            tmp_file.write(image_response.content)
+                        break
+                    else:
+                        print(f"Error: Received status code {image_response.status_code} for URL {image_url}")
+                except requests.exceptions.RequestException as e:
+                    print(f"Attempt {image_download_iter + 1} failed: {e}")
+                image_download_iter += 1
+                if image_download_iter > max_retries:
+                    print(f"Failed to download image after {max_retries} attempts")
+                    return True
             #Send Image
             random_sleep(2, 4)
             try:
@@ -718,8 +704,7 @@ def resend_image(driver, supplier_name):
                 file_input.send_keys(tmp_file_path)
             except Exception as e:
                 
-                raise ValueError(f"Couldn't resend image exp: {e}") 
-            
+                raise ValueError(f"Failed to resend image, exception: {e}")
 
         else:
             raise ValueError(f"Supplier: {supplier_name} not in chat_product_dict")
@@ -727,7 +712,8 @@ def resend_image(driver, supplier_name):
 def delete_chat_convo(driver, supplier_name = None):
     global chat_product_dict
     global chat_product_lock
-
+    global chat_step_dict
+    global chat_step_lock
 
     #Delete chat history
     if supplier_name != None:
@@ -766,15 +752,36 @@ def delete_chat_convo(driver, supplier_name = None):
         raise ValueError(f"Couldn't click on open delete chat for supplier: {supplier_name}")
     
     try:
-        delete_chat_xpath = "//span[@class='menu-content' and contains(text(), 'Delete')]"
+        delete_chat_xpath = "//span[@class='menu-content' and contains(text(), 'Archive')]"
         delete_chat = driver.find_element(By.XPATH, delete_chat_xpath)
         delete_chat.click()
         random_sleep(0, 1)
     except:
-        raise ValueError(f"Couldn't click delete chat for supplier: {supplier_name}")
+        print(f"Couldn't click Archive chat, so click Pin to top: {supplier_name}")
+        delete_chat_xpath = "//span[@class='menu-content' and contains(text(), 'Pin to top')]"
+        delete_chat = driver.find_element(By.XPATH, delete_chat_xpath)
+        delete_chat.click()
+        random_sleep(0, 1)
+        driver.execute_script("arguments[0].scrollIntoView();", delete_chat)
+        random_sleep(0, 1)
+        try:
+            delete_chat_xpath = "//span[@class='menu-content' and contains(text(), 'Archive')]"
+            delete_chat = driver.find_element(By.XPATH, delete_chat_xpath)
+            delete_chat.click()
+            random_sleep(0, 1)
+        except:
+            raise ValueError(f"Couldn't click delete chat for supplier: {supplier_name}")
     
+    random_sleep(2, 3)
+    try:
+        delete_chat_xpath = "//a[@class='im-next-balloon-close']"
+        delete_chat = driver.find_element(By.XPATH, delete_chat_xpath)
+        delete_chat.click()
+        random_sleep(0, 1)
+    except:
+        pass
 
-def monitor_chats(driver):
+def monitor_chats(driver, wait):
     global chat_step_dict
     global chat_step_lock
     global chat_product_dict
@@ -783,13 +790,22 @@ def monitor_chats(driver):
     #Get to chat page
     chat_page_url = "https://message.alibaba.com/message/messenger.htm#/"
     driver.get(chat_page_url)
-    random_sleep(3, 4)
+    random_sleep(5, 6)
 
-    clicked_on_unread_tab = False
+    class RESULT:
+        CHATGPT_RESPONSE_FAILED = -2
+        FAILED = -1
+        UNSURE = 0
+        SUCCESS = 1
+
+    success_flag = RESULT.UNSURE
     blocked_counter = 0
-    last_response = ""
+    print("Starting chat monitoring...")
     while True:
         print("Checking for new messages")
+
+        print("Removing Tip_window")
+        random_sleep(3, 4)
 
         #Check if suggestions popup
         try:
@@ -805,218 +821,294 @@ def monitor_chats(driver):
         except:
             pass
 
-
-
-        if clicked_on_unread_tab == False:
-            try:
-                unread_tab_class = "red-num"
-                unread_tab = driver.find_element(By.CLASS_NAME, unread_tab_class)
-                number_unread = int(unread_tab.text)
-
-                if number_unread != 0:
-                    unread_tab.click()
-                    clicked_on_unread_tab = True
-                    random_sleep(1, 2)
-                else:
-                    random_sleep(5, 10)
-                    continue
-            except:
-                random_sleep(5, 10)
-                pass
-        else:
-            #Sleep to give time for unread tab to load
-            random_sleep(5, 10)
-
-        #Get unread elements if any in current_tab
+        # Get first elements in all_tab. If not found, refresh the page
+        blocked_counter = 0
         try:
-            unread_item_container_class = "unread-list-container"
-            unread_element_container = driver.find_element(By.CLASS_NAME, unread_item_container_class)
-            blocked_counter = 0
+            item_container_class = "contact-item-container"
+            first_text_element = driver.find_element(By.CLASS_NAME, item_container_class)
+            # first_text_element = wait.until(EC.presence_of_element_located((By.CLASS_NAME, item_container_class)))
+            # text_elements = wait.until(EC.presence_of_all_elements_located((By.CLASS_NAME, item_container_class)))
         except:
-            print("No unread element container")
+            print("Failed to select first element container")
             blocked_counter += 1
             if blocked_counter > max_retries:
                 chat_page_url = "https://message.alibaba.com/message/messenger.htm#/"
                 driver.get(chat_page_url)
                 random_sleep(3, 4)
             continue
-        random_sleep(1, 2)
-        try:
-            unread_item_class = "contact-item-container"
-            element = unread_element_container.find_element(By.CLASS_NAME, unread_item_class)
-            blocked_counter = 0
-        except:
-            print("No unread elements")
-            blocked_counter += 1
-            if blocked_counter > max_retries:
-                chat_page_url = "https://message.alibaba.com/message/messenger.htm#/"
-                driver.get(chat_page_url)
-                random_sleep(3, 4)
-            continue
-        
-        random_sleep(2, 3)
-        #Iterate through unread elements
-        try:
-            supplier_name = element.find_element(By.CLASS_NAME, "contact-company").text
-        
-        except: 
-            x = input("Couldn't get supplier name for unread element")
-            raise ValueError(f"Couldn't get supplier name for unread element")
 
-        try:
-            unread_data_count = element.get_attribute('data-unread-count')
-        except:
-            raise ValueError(f"Couldn't get unread data count for supplier: {supplier_name}")
-
+        print("clicking...")
+        element = first_text_element
+        isfirst = True
         
-        #Click on chat
-        try:
-            random_sleep(0, 1)
-            element.click()
-            random_sleep(1, 2)
-        except:
-            raise ValueError(f"Couldn't click on unread element for supplier: {supplier_name}")
+        while True:
+            if isfirst == False:
+                try:
+                    parent_div = element.find_element(By.XPATH, './..')
+                    next_sibling_div = parent_div.find_element(By.XPATH, 'following-sibling::div')
+                    next_element = next_sibling_div.find_element(By.CLASS_NAME, item_container_class)
 
-        try:
-            new_message_element_parents = driver.find_elements(By.XPATH, "//div[contains(@class, 'item-content') and contains(@class, 'item-content-left')]")
-        except:
-            raise ValueError(f"Couldn't get new message element parents for supplier: {supplier_name}")
-        
-        random_sleep(1, 2)
-        unread_data_count = int(unread_data_count)
-        start_index_parent = 0
-       
-        if len(new_message_element_parents) < unread_data_count:
-            start_index_parent = 0
-        else:
-            start_index_parent = len(new_message_element_parents) - unread_data_count
+                    if next_element:
+                        print("Clicking on the next sibling element...")
+                        element = next_element
+                    else:
+                        print("No next sibling element found. clicking first element...")
+                        element = wait.until(EC.presence_of_element_located((By.CLASS_NAME, item_container_class)))
+                except StaleElementReferenceException:
+                    # Re-locate the element
+                    print("StaleElementReferenceException: No next sibling element found. clicking first element...")
+                    element = wait.until(EC.presence_of_element_located((By.CLASS_NAME, item_container_class)))
+                except TimeoutException:
+                    print("TimeoutException: No next sibling element found. clicking first element...")
+                    element = wait.until(EC.presence_of_element_located((By.CLASS_NAME, item_container_class)))
+                except NoSuchElementException:
+                    print(f"NoSuchElementException: No next sibling element found. except: {e}, clicking first element...")
+                    element = wait.until(EC.presence_of_element_located((By.CLASS_NAME, item_container_class)))
 
-        new_message_array = []
-        for i in range(start_index_parent, len(new_message_element_parents)):
-            new_message_element_parent = new_message_element_parents[i]
-            try:
-                new_message_element = new_message_element_parent.find_element(By.XPATH, ".//div[contains(@class, 'session-rich-content') and contains(@class, 'text')]")
-            except:
-                continue
-            new_message_text = new_message_element.text
-            new_message_array.append(new_message_text)
-        if len(new_message_array) == 0:
-            #First message is just an image or sent you to different person (wait for another message)
-            continue
+            # store the next element of current one into variable and then check for success, because of deleting the current element.
+            if (success_flag != RESULT.UNSURE):
+                delete_chat_convo(driver, supplier_name)
+
+            success_flag = RESULT.UNSURE
+            isfirst = False
+            img_src = ""
             
+            random_sleep(5, 6)
+            iter = 0
+            while True:
+                # Scroll down page
+                try:
+                    wait.until(EC.element_to_be_clickable(element))
+                    driver.execute_script("arguments[0].scrollIntoView();", element)
+                    random_sleep(0, 1)
+                    element.click()
+                    break
+                except Exception as e:
+                    print(e)
+                    iter += 1
+                    if(iter >= max_retries):
+                        isfirst = False
+                        break
+                    time.sleep(5)
+                    print("5 sec later, will retry...")
 
-        new_messages = '||'.join(new_message_array[::-1])
-        if last_response == new_messages:
-            #Repeat due to alibaba loading slow
-            continue
-        else:
-            last_response = new_messages
+            if (iter >= max_retries):
+                break
 
-        chat_step_array = []
-        current_product = ""
-        chat_bot_model = "chat_bot"
-        max_price = 0.0
-        delete_chat = False
-        try:
-            chat_step_dict = create_chat_steps(supplier_name)
-            for index, (key, value) in enumerate(chat_step_dict.items(), start=1):
-                question = f"{index}. {value}"
-                chat_step_array.append(question)
+            random_sleep(3, 4)
 
-            with chat_product_lock:
-                current_product = ""
-                if isinstance(chat_product_dict[supplier_name], list):
-                    current_product = chat_product_dict[supplier_name][0][1]
-                    try:
-                        max_price = float(chat_product_dict[supplier_name][0][3])
-                    except:
-                        raise ValueError(f"Couldn't get max price for supplier: {supplier_name} price: {chat_product_dict[supplier_name][0][3]}")
-                else:
-                    current_product = chat_product_dict[supplier_name][1]
-                    try:
-                        max_price = float(chat_product_dict[supplier_name][3])
-                    except:
-                        raise ValueError(f"Couldn't get max price for supplier: {supplier_name} price: {chat_product_dict[supplier_name][3]}")
-        except Exception as e:
-            delete_chat_convo(driver)
-            close_chat(driver)
-            continue
-        
-        #Determine what questions were answered by supplier
-        current_chat_step_string = " ".join(chat_step_array)
-        chat_tuple = (current_chat_step_string, new_messages)
-        chat_response = query_openai(chat_tuple, chat_bot_model)
-        print(f"Initial chat response: {chat_response}")
-        if chat_response:
-            #Use regex to get indexes of answered questions use another GPT to check whether the questions were good (END if not, remove from array if good)
-            if chat_response.__contains__("Confirm: "):
-                numbers_string = chat_response.replace("Confirm: ", "")
-                # Regular expression to match the pattern "index: answer"
-                pattern = r'(\d+):\s*([^:]+?)(?=\s*\d+:|$)'
-                matches = re.findall(pattern, numbers_string, re.IGNORECASE)
-                answers_dict = {int(index): answer.strip() for index, answer in matches}
+            company_name_xpath = "//div[contains(@class, 'contact-item-container') and contains(@class, 'selected')]/div[@class='contact-right']/div[@class='contact-company']"
+            try:
+                # supplier_name = wait.until(EC.presence_of_element_located((By.XPATH, company_name_xpath))).text
+                supplier_name = driver.find_element(By.XPATH, company_name_xpath).text
+            
+            except: 
+                print("Failed to get supplier name for unread element")
+                isfirst = False
+                continue
+                # raise ValueError(f"Couldn't get supplier name for unread element")
+            
+            print("xxxxxx")
+            print(supplier_name)
+            
+            iter = 0
+            while True:
+                try:
+                    message_item_wrapper_class = "message-item-wrapper"
+                    msg_wrapper_elements = wait.until(EC.presence_of_all_elements_located((By.CLASS_NAME, message_item_wrapper_class)))
+                    new_message_array = []
+                    for element2 in reversed(msg_wrapper_elements):
+                        if 'item-right' in element2.get_attribute('class').split():
+                            try:
+                                child_element = element2.find_element(By.XPATH, ".//div[contains(@class, 'session-rich-content')]")
+                                if (child_element):
+                                    break
+                            except NoSuchElementException as e:
+                                print(f"Child element not found: {e}")
+                            except StaleElementReferenceException as e:
+                                print(f"Child element not found: {e}")
+                        try:
+                            # Get the text content of the 'session-rich-content' div
+                            child_element = element2.find_element(By.XPATH, ".//div[contains(@class, 'session-rich-content') and contains(@class, 'text')]")
+                            new_message_text = child_element.text
+                            print(new_message_text)
+                        except NoSuchElementException as e:
+                            print(f"Child Text element not found: {e}")
+                            try:
+                                image_element = element2.find_element(By.XPATH, ".//div[contains(@class, 'session-rich-content') and contains(@class, 'media')]/div/img")
+                                if image_element:
+                                    img_src = image_element.get_attribute("src")
+                            except NoSuchElementException as e:
+                                print(f"Child Image element not found: {e}")
+                            continue
+                        new_message_array.append(new_message_text)
+                    break
+                except Exception as e:
+                    print(e)
+                    if (iter >= max_retries):
+                        raise ValueError(f"Couldn't get supplier name for unread element")
+                    random_sleep(2, 3)
+                    iter += 1
 
-                #Remove from chat steps if good
-                indexes_left = sorted(list(chat_step_dict.keys()))
-                for index in answers_dict:
-                    corrected_index = index - 1
-                    initial_index = indexes_left[corrected_index]
-                    del chat_step_dict[supplier_name][initial_index]
-                
-                #Save changes
-                async_thread = threading.Thread(target=write_dict_to_file, args=(chat_step_dict_loc, chat_step_dict, chat_step_lock))
-                async_thread.start()
-                    
+            if len(new_message_array) == 0:
+                #First message is just an image or sent you to different person (wait for another message)
+                continue
 
-            if len(chat_step_dict[supplier_name]) == 0:
-                #All questions answered
-                delete_chat = True
-                chat_response = "Thanks for all the info you provided. I need to talk to my supervisor and I'll get back to you once we reach a decision. Have a great day!"
-                #TODO Save info to spreadsheet
-            elif chat_response.__contains__("PICTURE"):
-                resend_image(driver, supplier_name)
-            else:
-                #Send questions remaining
-                second_chat_question_array = []
-                for index, (key, value) in enumerate(chat_step_dict.items(), start=1):
-                    question = f"{index}. {value}"
-                    second_chat_question_array.append(question)
-                chat_response = "\n".join(second_chat_question_array)
-                chat_response = "Hello, can you please answer the following questions:\n" + chat_response + "\n (preferably in 1. 2. 3, etc. format to avoid confusion)"
+            new_messages = ', '.join(new_message_array[::-1])
+            print(f"New messages: {new_messages}")
+
+            chat_step_array = []
+            analysing_model = "analysing"
+            max_price = 0.0
+            try:
+                current_step_dict = create_chat_steps(supplier_name)
+                if img_src != "":
+                    if (list(chat_step_dict[supplier_name].items())[6][1].lower().__contains__("unsure")):
+                        print(f"img_src : {img_src}")
+                        chat_step_dict[supplier_name][list(chat_step_dict[supplier_name].keys())[6]] = img_src
+
+                for index, (key, value) in enumerate(current_step_dict[supplier_name].items(), start=1):
+                    if chat_step_dict[supplier_name][key].lower().__contains__("unsure"):
+                        question = f"{index}. {key}"
+                        chat_step_array.append(question)
+
+                with chat_product_lock:
+                    current_product = ""
+                    if isinstance(chat_product_dict[supplier_name], list):
+                        current_product = chat_product_dict[supplier_name][0][1]
+                        try:
+                            max_price = float(re.sub(r'[^\d.]', '', chat_product_dict[supplier_name][0][3]))
+                            # max_price = sanitize_price(chat_product_dict[supplier_name][0][3])
+                        except:
+                            raise ValueError(f"Couldn't get max price for supplier: {supplier_name} price: {chat_product_dict[supplier_name][0][3]}")
+                    else:
+                        current_product = chat_product_dict[supplier_name][1]
+                        try:
+                            max_price = float(re.sub(r'[^\d.]', '', chat_product_dict[supplier_name][3]))
+                        except:
+                            raise ValueError(f"Couldn't get max price for supplier: {supplier_name} price: {chat_product_dict[supplier_name][3]}")
+            
+            except Exception as e:
+                continue
+
+            print("confirming the chatGPT response...")
+            iter = 0
+            current_chat_step_string = "\n".join(chat_step_array)
+            print(f"current_chat_step_string :: {current_chat_step_string}")
+            
+            chat_tuple = (current_chat_step_string, new_messages)
+            while True:
+                #Determine what questions were answered by supplier
+                chat_response = query_openai(chat_tuple, analysing_model)
+                print(f"Initial chat response: {chat_response}")
+
+                if chat_response:
+                    #Use regex to get indexes of answered questions use another GPT to check whether the questions were good (END if not, remove from array if good)
+                    if is_json(chat_response):
+                        try:
+                            python_list = []
+                            python_list = json.loads(chat_response)
+                            print(f"[1008]: {python_list}")
+                            
+                            cleaned_dict = {
+                                (key.strip() if isinstance(key, str) else key): (value.strip() if isinstance(value, str) else value)
+                                for key, value in python_list.items()
+                            }
+                            print(f"[1011]: {cleaned_dict}")
+                            
+                            sorted_items = sorted(cleaned_dict.items(), key=lambda item: int(item[0]))
+                            formatted_list = {int(key): value for key, value in sorted_items}
+                            print(f"answers_dict : {formatted_list}")
+                            if formatted_list == {}:
+                                continue
+
+                            break
+
+                        except:
+                            print("error")
+                            continue
+
+            print(f"[1025]: {formatted_list}")
+
+            try:
+                for index, (key, value) in enumerate(chat_step_dict[supplier_name].items(), start=1):
+                    if chat_step_dict[supplier_name][key].lower().__contains__("unsure"):
+                        if formatted_list[index].lower() == "no":
+                            success_flag = -1
+                        if (index == 2):
+                            if "unsure" not in formatted_list[index].lower():
+                                if (float(formatted_list[2]) > max_price):
+                                    success_flag = -1
+
+                        if (index == 7):
+                            if formatted_list[index].lower().__contains__("picture"):
+                                resend_image(driver, supplier_name)
+                                # input("sending image...")
+                            elif "unsure" in chat_step_dict[supplier_name][key].lower():
+                                chat_step_dict[supplier_name][key] = formatted_list[index]
+                        else:
+                            chat_step_dict[supplier_name][key] = formatted_list[index]
+            except Exception as e:
+                print(e)
+
+            if success_flag == RESULT.FAILED:
+                print("NO___END")
+                continue
+
+            if success_flag != RESULT.CHATGPT_RESPONSE_FAILED:
+                success_flag = RESULT.SUCCESS
+                for (key, value) in chat_step_dict[supplier_name].items():
+                    if "unsure" in chat_step_dict[supplier_name][key].lower():
+                        success_flag = RESULT.UNSURE
+
+                if (success_flag == RESULT.SUCCESS):
+                    #All questions answered
+                    #TODO Save info to spreadsheet
+                    product_tuple = chat_product_dict[supplier_name]
+                    product_name = ""
+                    if isinstance(product_tuple, list):
+                        product_name = product_tuple[0][1]
+                    else:
+                        product_name = product_tuple[1]
+                    product_description_tuple = (supplier_name, list(chat_step_dict[supplier_name].items())[6][1], max_price, list(chat_step_dict[supplier_name].items())[3][1], list(chat_step_dict[supplier_name].items())[4][1])
+                    googleSheet(product_name, product_description_tuple)
+                    continue
+
+            #Send questions remaining
+            second_chat_question_array = []
+            for index, (key, value) in enumerate(chat_step_dict[supplier_name].items(), start=1):
+                if isinstance(chat_step_dict[supplier_name][key], str):
+                    if chat_step_dict[supplier_name][key].lower().__contains__("unsure"):
+                        print(f"value == {chat_step_dict[supplier_name][key]}")
+                        question = f"{index}. {key}"
+                        second_chat_question_array.append(question)
+            current_chat_step_string = "\n".join(second_chat_question_array)
+            print(f"[1074]:{current_chat_step_string}")
+
+            chat_response = "Can you please answer the following questions: \n" + current_chat_step_string + "\n(preferably in 1. 2. 3, etc. Please format to avoid confusion and answer with exact numbers.)"
+
+            message_element_class = "send-textarea"
+            message_element = driver.find_element(By.CLASS_NAME, message_element_class)
+            message_element.click()
 
             print(f"Chat response: {chat_response}")
-            cont = input("Continue?")
-            #Send chat response
-            try:
-                message_element_class = "send-textarea"
-                message_element = driver.find_element(By.CLASS_NAME, message_element_class)
-                message_element.click()
-                random_sleep(0, 1)
-                message_element.send_keys(chat_response)
-                random_sleep(0, 1)
 
-                send_button_xpath = "//button[contains(@class, 'im-next-btn') and contains(@class, 'send-tool-button')]"
-                send_button = driver.find_element(By.XPATH, send_button_xpath)
-                send_button.click()
+            sentences = chat_response.split('\n')
+            try:
+                for sentence in sentences:
+                    # If the sentence is not blank, add it to the current paragraph
+                    if sentence:
+                        random_sleep(0, 1)
+                        message_element.send_keys(sentence)
+                        random_sleep(0, 1)
+                        message_element.send_keys(Keys.SHIFT, Keys.ENTER)
+
+                input("Continue?")
+                random_sleep(1, 2)
+                message_element.send_keys(Keys.ENTER)
             except:
                 raise ValueError(f"Couldn't send chat response for supplier: {supplier_name}")
-        else:
-            raise ValueError(f"Failed to get chat response for supplier: {supplier_name}")
-        
-
-        if delete_chat == True:
-            delete_chat_convo(driver, supplier_name)
-        
-        close_chat(driver)
-
-def close_chat(driver):
-    #Close chat
-    try:
-        unread_tab_xpath = "//span[@class='im-next-tabs-tab-inner-title' and @title='Unread']"
-        unread_tab = driver.find_element(By.XPATH, unread_tab_xpath)
-        unread_tab.click()
-    except:
-        raise ValueError(f"Couldn't click on unread tab to close")
+            
 
 def read_data():
     # Initialize session and capture data
@@ -1058,20 +1150,120 @@ def read_data():
                 print(f"Error in row: {row_values}  column(s): {error_columns}")
         else:
             all_needed_values.append(row_values)
-
-    
     
     return all_needed_values
 
 
+def authenticate_google_sheets(json_keyfile):
+    scope = ["https://www.googleapis.com/auth/spreadsheets"]
+    credentials = ServiceAccountCredentials.from_json_keyfile_name(json_keyfile, scope)
+    client = gspread.authorize(credentials)
+    return client
+
+
+def set_column_headers(sheet, headers, header_format):
+    sheet.append_row(headers)
+
+    # Apply formatting to the header row
+    format_cell_range(sheet, f'A1:E1', header_format)
+
+
+def googleSheet(product_name, product_description_tuple):
+    supplier_name, picture, price, package_demention, package_weight = product_description_tuple
+    headers = ["Supplier Name", "Picture Link", "Max Price", "Package Demention", "Package Weight"]
+
+    # Ensure the link length does not exceed 99 characters
+    if len(product_name) > 99:
+        sheet_name = product_name[:99]  # Cut the link to 99 characters
+    else:
+        sheet_name = product_name
+
+    # Set the header format
+    header_format = CellFormat(
+        backgroundColor=Color(0.9, 0.9, 0.9),  # Light grey background
+        textFormat=TextFormat(bold=True, fontSize=12, foregroundColor=Color(0, 0, 0)),  # Bold text
+        horizontalAlignment='CENTER'
+    )
+
+    # Authenticate and get the spreadsheet
+    json_keyfile = './logical-fort-420509-2592be45835c.json'
+    client = authenticate_google_sheets(json_keyfile)
+    spreadsheet_id = '1TOGEO2bU19X-_raSv4R2VCLPmaYMQpyqj6ps9Qb6cDY'
+    spreadsheet = client.open_by_key(spreadsheet_id)
+
+    try:
+        # Check if the sheet exists, if not create it
+        sheet = spreadsheet.worksheet(sheet_name)
+    except gspread.exceptions.WorksheetNotFound:
+        # Adding a new sheet
+        new_sheet = spreadsheet.add_worksheet(title=sheet_name, rows="100", cols="20")
+        print(f"New sheet '{sheet_name}' added successfully.")
+
+        # Set the headers and apply styles
+        set_column_headers(new_sheet, headers, header_format)
+        sheet = new_sheet
+
+        # Get GID of the new sheet
+        new_sheet_gid = new_sheet.id
+        new_sheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={new_sheet_gid}"
+        print(f"URL of the new sheet: {new_sheet_url}")
+        add_google_sheet_link(product_name, new_sheet_url)
+
+    # Append the new row
+    new_row = [supplier_name, picture, price, package_demention, package_weight]
+    sheet.append_row(new_row)
+    print(f"New row added successfully: {new_row}")
+
+def add_google_sheet_link(product_name, link):
+    export_name = 'upwork_sample.xlsx'
+    workbook = pyxl.load_workbook(export_name)
+     
+    sheet = workbook['Sheet1']
+
+    # Get the header row to find the product name column and google sheet link column
+    header_row = 1
+    product_name_column_index = None
+    google_sheet_link_column_index = None
+
+    for cell in sheet[header_row]:
+        if cell.value and cell.value.strip().lower() == 'rfq product name':
+            product_name_column_index = cell.column
+        elif cell.value and cell.value.strip().lower() == 'google sheet link':
+            google_sheet_link_column_index = cell.column
+
+    # If the google sheet link column doesn't exist, create it
+    if google_sheet_link_column_index is None:
+        google_sheet_link_column_index = sheet.max_column + 1
+        sheet.cell(row=header_row, column=google_sheet_link_column_index, value='Google Sheet Link')
+
+    # Ensure the product name column exists
+    if product_name_column_index is None:
+        print("Product name column not found.")
+        return
+
+    # Find the row with the corresponding product name and add the link in the google sheet link column
+    for row in sheet.iter_rows(min_row=2, values_only=False):
+        if row[product_name_column_index - 1].value == product_name:
+            sheet.cell(row=row[0].row, column=google_sheet_link_column_index, value=link)
+            break
+
+    with excel_lock:
+        workbook.save('upwork_sample.xlsx')
+
+
+
 def main():
+    # tuple1 = ("sup_name", "url", 40, "demention", "weight")
+    # googleSheet('Replacement Fliter for Vacuum Shark iz163h Replacement Filter for Vacuum Shark iz163h,2 HEPA Filters and 12 Foam Felt Kit', tuple1)
+    # input("googleSheet!")
 
     #Load Data
     data = read_data()
-
+    
     #Load Current Chat State
     read_chat_dicts()
 
+    print("initialize_alibaba_search...")
     #Init Alibaba
     driver, wait = initialize_alibaba_search()
 
@@ -1080,6 +1272,7 @@ def main():
         amazon_info_list = pickle.load(f)
         print("Loaded amazon info list")
     current_len_amazon_info = len(amazon_info_list)
+    print(current_len_amazon_info)
 
     #Send initial messages
     prompt = input("All or just monitor (all/m)? ")
@@ -1087,6 +1280,7 @@ def main():
         first_search = False
         for i, item_row in enumerate(data[:current_len_amazon_info]):
             #Get ASIN info
+            print(item_row)
             try:
                 search_term_index = 0
                 amazon_link_index = 1
@@ -1094,11 +1288,14 @@ def main():
                 rfq_product_name_index = 4
                 rfq_description_index = 5
                 max_exw_price_index = 6
+                max_size_index = 7
+                QC_Extra_Notes_index = 9
                 search_term = item_row[search_term_index]
                 link_asin = ((item_row[amazon_link_index].split('"'))[1]).split('/')[-1]
                 rfq_quantity = item_row[rfq_quantity_index]
                 rfq_product_name = item_row[rfq_product_name_index]
                 max_exw_price = item_row[max_exw_price_index]
+                max_size = item_row[max_size_index]
             except:
                 print(f"Error in getting data for row: {item_row}")
                 continue
@@ -1107,7 +1304,7 @@ def main():
             main_image_url, title = amazon_info_list[i]
         
  
-            print("About to be Searched Title: ", title)
+            print(f"[{i}] About to be Searched Title: {title}")
             #Get simplified titles
             simplified_titles = None
             title_prompt = f'Initial title: {title}'
@@ -1122,9 +1319,9 @@ def main():
     
             #Open Alibaba and send initial messages
             supplier_set = set()
-            rfq_info = [rfq_quantity, rfq_product_name, main_image_url, max_exw_price]
+            rfq_info = [rfq_quantity, rfq_product_name, main_image_url, max_exw_price, max_size]
             for j, simplified_search_term in enumerate(simplified_titles):
-                print(f"Searching for: {simplified_search_term}")
+                print(f"-[{j}] Searching for: {simplified_search_term}")
                 if i == 0 and j == 0:
                     first_search = True
                 else:
@@ -1134,10 +1331,9 @@ def main():
 
 
         #Monitor chats
-        # monitor_chats(driver)
+        # monitor_chats(driver, wait)
     else:
-        monitor_chats(driver)
-
+        monitor_chats(driver, wait)
 
 if __name__ == '__main__':
     main()
@@ -1145,3 +1341,4 @@ if __name__ == '__main__':
 
     
 
+    
