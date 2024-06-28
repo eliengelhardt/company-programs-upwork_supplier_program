@@ -38,7 +38,7 @@ def is_json(variable):
 load_dotenv()
 
 # Now you can access the API key using os.getenv
-api_key = "sk-proj-3r0BfW5phKYYGOjHTRRNT3BlbkFJfaOoAV8i8HP550P7Lug0"
+api_key = "Ask for API key"
 
 #Global Variables
 max_wait_time = 60
@@ -248,8 +248,8 @@ def initialize_alibaba_search():
         #Click login with email
         random_sleep(0, 2)
         try:
-            email = 'eliengelhardt@gmail.com'
-            password = 'Whiteout123'
+            email = 'email'
+            password = 'pass'
             login_with_email_css = '.sif_form.sif_form-account'
             password_css = '.sif_form.sif_form-password'
             submit_btn_xpath = "//button[contains(@class, 'sif_form-submit')]"
