@@ -1,3 +1,24 @@
+#  pip install openai selenium screeninfo undetected-chromedriver openpyxl python-dotenv gspread gspread-formatting oauth2client requests Flask
+
+
+    
+import requests
+
+def api_call(request_url, request_method, payload_body=None):
+    try:
+        print("-------------call API---------------")
+        if request_method.upper() == "POST":
+            response = requests.post(request_url, json=payload_body)
+        elif request_method.upper() == "GET":
+            response = requests.get(request_url, params=payload_body)
+        else:
+            return "Unsupported request method"
+        
+        response.raise_for_status()  # Raise an HTTPError for bad responses (4xx and 5xx)
+        return response
+    except requests.exceptions.RequestException as e:
+        return f"An error occurred: {e}"
+
 
 from openai import OpenAI
 from selenium.webdriver.support.ui import WebDriverWait
@@ -27,6 +48,11 @@ from oauth2client.service_account import ServiceAccountCredentials
 import json
 from enum import Enum
 
+
+
+
+
+
 def is_json(variable):
     try:
         json.loads(variable)
@@ -38,12 +64,12 @@ def is_json(variable):
 load_dotenv()
 
 # Now you can access the API key using os.getenv
-# api_key = "Ask for API key"
+api_key = "Enter your API key"
 
 #Global Variables
 max_wait_time = 60
-number_of_suppliers_to_contact = 2
-max_retries = 5
+number_of_suppliers_to_contact = 1
+max_retries = 2
 chat_product_dict = {} #Key: supplier name, Value: list queue of product tuples (first is current product chat)
 chat_step_dict = {} #Key: supplier name, Value: dictionary key: index, value is the chat questions left
 chat_product_lock = threading.Lock()
@@ -248,8 +274,8 @@ def initialize_alibaba_search():
         #Click login with email
         random_sleep(0, 2)
         try:
-            email = 'email'
-            password = 'pass'
+            email = 'nikunj@acedataanalytics.com'
+            password = 'Nikunj@123'
             login_with_email_css = '.sif_form.sif_form-account'
             password_css = '.sif_form.sif_form-password'
             submit_btn_xpath = "//button[contains(@class, 'sif_form-submit')]"
@@ -274,7 +300,7 @@ def initialize_alibaba_search():
 
     return driver, wait
 
-def final_input_interaction(driver, wait, description_tuple, supplier_name):
+def final_input_interaction(driver, wait, description_tuple, supplier_name ,uniqueID):
 
     #Get product info
     quantity, rfq_product_name, image_url, max_exw_price, max_size = description_tuple
@@ -394,7 +420,11 @@ def final_input_interaction(driver, wait, description_tuple, supplier_name):
             print(f"Failed to confirm successful inquiry for supplier, exception: {e}")
             return True
 
+    #  send Data to google apps script
+    #  
     #Add chat product history (initial chat not included in chat since should be included in steps)
+    api_call('https://script.google.com/macros/s/AKfycbyunwGw8sIwyphrO2K04xrf5zBgXC_VxPvuy1dStmu7V_DV104KK39H7xUMZHo86lHH/exec', "POST", {"description_tuple":description_tuple,"supplier_name":supplier_name,"uniqueID":uniqueID})
+    
     with chat_product_lock:
         print(f"Adding to product dict for supplier : {supplier_name}")
         chat_product_dict[supplier_name] = []
@@ -421,7 +451,7 @@ def final_input_interaction(driver, wait, description_tuple, supplier_name):
     
     return False
 
-def send_initial_message(driver, wait, search_term, rfq_info, first_search, supplier_set):
+def send_initial_message(driver, wait, search_term, rfq_info, first_search, supplier_set, uniqueID):
 
     #Initialize variables
     global number_of_suppliers_to_contact
@@ -477,6 +507,10 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
     if not text_elements:
         raise ValueError(f"No text elements found for search term: {search_term}")
 
+    print("///////////////////total suppliers /////////////////////////////")
+    print(len(text_elements))
+
+    # /random_sleep(50, 5000)
     random_sleep(0, 1)
     supplier_image_class = "search-card-e-slider__wrapper"
     try:
@@ -562,6 +596,9 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
                             raise ValueError(f"Failed to switch windows after contacting supplier for search term: {search_term}, index: {j}, exception: {e}")
                         change_win_iter += 1
 
+                        # random_sleep(50, 5000)
+    
+
                 #Click Contact Supplier button
                 isNoSuchElement = 0
                 btn_click_iter = 0
@@ -598,7 +635,7 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
                             raise ValueError(f"Failed to switch to supplier popup for search term: {search_term}, index: {j}, exception: {e}") 
                         popup_iter += 1
                 
-                errors = final_input_interaction(driver, wait, description_tuple, supplier_name)
+                errors = final_input_interaction(driver, wait, description_tuple, supplier_name, uniqueID)
                 if errors:
                     print("Error in sending message2. Continue? (y/n)")
                     pass
@@ -1103,7 +1140,7 @@ def monitor_chats(driver, wait):
                         random_sleep(0, 1)
                         message_element.send_keys(Keys.SHIFT, Keys.ENTER)
 
-                input("Continue?")
+                # input("Continue?")
                 random_sleep(1, 2)
                 message_element.send_keys(Keys.ENTER)
             except:
@@ -1252,7 +1289,7 @@ def add_google_sheet_link(product_name, link):
 
 
 
-def main():
+def main(amazon_info_list):
     # tuple1 = ("sup_name", "url", 40, "demention", "weight")
     # googleSheet('Replacement Fliter for Vacuum Shark iz163h Replacement Filter for Vacuum Shark iz163h,2 HEPA Filters and 12 Foam Felt Kit', tuple1)
     # input("googleSheet!")
@@ -1267,15 +1304,16 @@ def main():
     #Init Alibaba
     driver, wait = initialize_alibaba_search()
 
-    amazon_info_list = []
-    with open('amazon_info_list.pickle', 'rb') as f:
-        amazon_info_list = pickle.load(f)
-        print("Loaded amazon info list")
+    
+    print("************************************************")
+    print(json.dumps(amazon_info_list))
+    
     current_len_amazon_info = len(amazon_info_list)
     print(current_len_amazon_info)
+    print("+++++++++++++++++++++++")
 
     #Send initial messages
-    prompt = input("All or just monitor (all/m)? ")
+    prompt = "all" #input("All or just monitor (all/m)? ")
     if prompt.lower() == 'all':
         first_search = False
         for i, item_row in enumerate(data[:current_len_amazon_info]):
@@ -1301,7 +1339,7 @@ def main():
                 continue
 
 
-            main_image_url, title = amazon_info_list[i]
+            main_image_url, title, uniqueID = amazon_info_list[i]
         
  
             print(f"[{i}] About to be Searched Title: {title}")
@@ -1317,6 +1355,7 @@ def main():
             else:
                 raise ValueError(f"Failed to get simplified titles for title: {title}")
     
+    
             #Open Alibaba and send initial messages
             supplier_set = set()
             rfq_info = [rfq_quantity, rfq_product_name, main_image_url, max_exw_price, max_size]
@@ -1327,18 +1366,50 @@ def main():
                 else:
                     first_search = False
 
-                supplier_set = send_initial_message(driver, wait, simplified_search_term, rfq_info, first_search, supplier_set)
+                supplier_set = send_initial_message(driver, wait, simplified_search_term, rfq_info, first_search, supplier_set, uniqueID)
 
 
         #Monitor chats
         # monitor_chats(driver, wait)
     else:
+        print("--------monitor_chats-------------")
         monitor_chats(driver, wait)
 
+
+
+# Start Web server for send & Receive data
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+@app.route('/send_data', methods=['POST'])
+def send_data():
+    data = request.json
+    # Log the data to the console
+    # print("Received data:", data)
+    
+    # Process the data here
+    response = {
+        'message': 'Data received',
+        'data': data
+    }
+    print(data['products'])
+    data=data['products']
+    print("type=======================> : " + str(issubclass(type(data), str)))
+    main(data)
+    return jsonify(response)
+
 if __name__ == '__main__':
-    main()
+    app.run(port=8000)
+    # main()
 
 
     
 
-    
+
+# response = api_call("https://script.google.com/macros/s/AKfycbyunwGw8sIwyphrO2K04xrf5zBgXC_VxPvuy1dStmu7V_DV104KK39H7xUMZHo86lHH/exec", "POST", {"key": "value"})
+
+# if isinstance(response, requests.Response):  # Check if the response is a requests.Response object
+#     print(response.json())  # If the response is in JSON format
+# else:
+#     print(response)  # Print the error message
