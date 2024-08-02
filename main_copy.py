@@ -64,7 +64,7 @@ def is_json(variable):
 load_dotenv()
 
 # Now you can access the API key using os.getenv
-api_key = "Enter your API key"
+api_key = "sk-api"
 
 #Global Variables
 max_wait_time = 60
@@ -189,6 +189,11 @@ def random_sleep(min_time, max_time):
 def query_openai(prompt, model, max_retries=max_retries):
     base_wait = 1  # Base wait time in seconds
 
+    print(f"++++4+++++++++++++++++++++++{prompt}+++++++++++++++++")   
+    print(f"++++5+++++++++++++++++++++++{model}+++++++++++++++++")   
+    print(f"++++6+++++++++++++++++++++++{max_retries}+++++++++++++++++")   
+    print(f"++++7+++++++++++++++++++++++OPENAI CALL+++++++++++++++++")   
+
     #Obtain OpenAI API Access
     client = OpenAI(api_key=api_key)
 
@@ -198,7 +203,7 @@ def query_openai(prompt, model, max_retries=max_retries):
                 #Get simplified titles
                 response = client.chat.completions.create(
                 # model="ft:gpt-3.5-turbo-0125:personal:simplified-titles:96s6KQpr",
-                model="gpt-4o-2024-05-13",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": "You are a program that needs to return a list of simplified titles from an 'Initial title' and must abide by the given rules. Rule 1: Begin with the 'Initial title' and with each iteration make the simplified title generated less detailed (less characters). Rule 2: In the list of simplified titles returned, have the simplified titles ordered from 1) most detailed (most characters) to 10) least detailed (least characters). Rule 3: Only return simplified titles that are less than 50 characters in total length. Rule 4: Return 10 simplified titles. Rule 5: Do not include character count in the simplified titles. Rule 6: Exclude any brand names from the returned simplified titles unless the product is specific for a brand such as 'brand replacement parts'."},
                     {"role": "user", "content": f"{prompt}"}
@@ -216,7 +221,7 @@ def query_openai(prompt, model, max_retries=max_retries):
                 ]
 
                 response = client.chat.completions.create(
-                    model="gpt-4o-2024-05-13",
+                    model="gpt-4o",
                     messages=messages,
                     response_format={"type": "json_object"}
                 )
@@ -969,6 +974,7 @@ def monitor_chats(driver, wait):
                             child_element = element2.find_element(By.XPATH, ".//div[contains(@class, 'session-rich-content') and contains(@class, 'text')]")
                             new_message_text = child_element.text
                             print(new_message_text)
+                            print(f"++++1+++++++++++++++++++++++{new_message_text}+++++++++++++++++")    
                         except NoSuchElementException as e:
                             print(f"Child Text element not found: {e}")
                             try:
@@ -979,6 +985,7 @@ def monitor_chats(driver, wait):
                                 print(f"Child Image element not found: {e}")
                             continue
                         new_message_array.append(new_message_text)
+                        print(f"++++2+++++++++++++++++++++++{new_message_text}+++++++++++++++++")    
                     break
                 except Exception as e:
                     print(e)
@@ -993,6 +1000,8 @@ def monitor_chats(driver, wait):
 
             new_messages = ', '.join(new_message_array[::-1])
             print(f"New messages: {new_messages}")
+            print(f"++++3+++++++++++++++++++++++{new_messages}+++++++++++++++++") 
+               
 
             chat_step_array = []
             analysing_model = "analysing"
@@ -1003,7 +1012,7 @@ def monitor_chats(driver, wait):
                     if (list(chat_step_dict[supplier_name].items())[6][1].lower().__contains__("unsure")):
                         print(f"img_src : {img_src}")
                         chat_step_dict[supplier_name][list(chat_step_dict[supplier_name].keys())[6]] = img_src
-
+                print(f"++++3.1++++++++++++++++++++++++++++++++++++++++") 
                 for index, (key, value) in enumerate(current_step_dict[supplier_name].items(), start=1):
                     if chat_step_dict[supplier_name][key].lower().__contains__("unsure"):
                         question = f"{index}. {key}"
@@ -1024,9 +1033,11 @@ def monitor_chats(driver, wait):
                             max_price = float(re.sub(r'[^\d.]', '', chat_product_dict[supplier_name][3]))
                         except:
                             raise ValueError(f"Couldn't get max price for supplier: {supplier_name} price: {chat_product_dict[supplier_name][3]}")
-            
+                print(f"++++3.2++++++++++++++++++++++++++++++++++++++++") 
             except Exception as e:
-                continue
+                print(f"++++3.3++++++++++++++++++++++++++++++++++++++++") 
+                print(e)
+                # continue
 
             print("confirming the chatGPT response...")
             iter = 0
@@ -1310,15 +1321,16 @@ def main(amazon_info_list):
     
     current_len_amazon_info = len(amazon_info_list)
     print(current_len_amazon_info)
-    print("+++++++++++++++++++++++")
+    print(f"+++++++++++++++++++++++")
 
     #Send initial messages
     prompt = "all" #input("All or just monitor (all/m)? ")
-    if prompt.lower() == 'all':
+    if prompt.lower() == 'all2':
         first_search = False
         for i, item_row in enumerate(data[:current_len_amazon_info]):
             #Get ASIN info
             print(item_row)
+            print(f"+++++++++++++++++++++2++")
             try:
                 search_term_index = 0
                 amazon_link_index = 1
@@ -1334,13 +1346,14 @@ def main(amazon_info_list):
                 rfq_product_name = item_row[rfq_product_name_index]
                 max_exw_price = item_row[max_exw_price_index]
                 max_size = item_row[max_size_index]
+                print(f"++++++++++++++++++++3+++")
             except:
                 print(f"Error in getting data for row: {item_row}")
                 continue
 
 
             main_image_url, title, uniqueID = amazon_info_list[i]
-        
+            print(f"++++++++++++++++++++4+++")
  
             print(f"[{i}] About to be Searched Title: {title}")
             #Get simplified titles
@@ -1369,8 +1382,8 @@ def main(amazon_info_list):
                 supplier_set = send_initial_message(driver, wait, simplified_search_term, rfq_info, first_search, supplier_set, uniqueID)
 
 
-        #Monitor chats
-        # monitor_chats(driver, wait)
+        # Monitor chats
+        monitor_chats(driver, wait)
     else:
         print("--------monitor_chats-------------")
         monitor_chats(driver, wait)
@@ -1396,8 +1409,11 @@ def send_data():
     print(data['products'])
     data=data['products']
     print("type=======================> : " + str(issubclass(type(data), str)))
-    main(data)
-    return jsonify(response)
+    try:
+        main(data)
+    except:
+        print("Something else went wrong")    
+    return jsonify({"status":"true"})
 
 if __name__ == '__main__':
     app.run(port=8000)
