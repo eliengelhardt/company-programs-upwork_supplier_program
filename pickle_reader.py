@@ -31,8 +31,9 @@ def read_pickle_file(file_path):
         print(f"An error occurred while reading the pickle file: {e}")
 
 # Replace 'your_pickle_file.pkl' with the path to your pickle file
-read_pickle_file("chat_product_dict.pkl")
-read_pickle_file("chat_step_dict.pkl")
+# read_pickle_file("chat_product_dict.pkl")
+# read_pickle_file("chat_step_dict.pkl")
+read_pickle_file("current_products.pkl")
 
 
 

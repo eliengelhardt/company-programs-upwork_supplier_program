@@ -4,6 +4,17 @@
     
 import requests
 
+    
+def read_pickle_file(file_path):
+    try:
+        with open(file_path, 'rb') as file:
+            return pickle.load(file)
+            print(data)
+    except Exception as e:
+        print(f"An error occurred while reading the pickle file: {e}")
+
+
+
 def api_call(request_url, request_method, payload_body=None):
     try:
         print("-------------call API---------------")
@@ -64,7 +75,8 @@ def is_json(variable):
 load_dotenv()
 
 # Now you can access the API key using os.getenv
-api_key = "sk-api"
+api_key = "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"
+           
 
 #Global Variables
 max_wait_time = 60
@@ -78,7 +90,9 @@ index_step_dict_lock = threading.Lock()
 excel_lock = threading.Lock()
 chat_dict_loc = "chat_product_dict.pkl"
 chat_step_dict_loc = "chat_step_dict.pkl"
+current_products_loc = "current_products.pkl"
 
+global allProdutsDist
 
 
 def with_cooldown(func, max_attempts=5, initial_wait=3):
@@ -226,6 +240,8 @@ def query_openai(prompt, model, max_retries=max_retries):
                     response_format={"type": "json_object"}
                 )
                 print(f"[188] response = {response}")
+                print(response.choices[0].message.content)
+                print("++++++++++++7.1+++++response.choices[0].message.content++++++++++++++++++++++++++++++++++++++++++++++")
             return response.choices[0].message.content
         except OpenAI.RateLimitError:
             wait_time = base_wait * math.pow(2, i)  # Exponential backoff formula
@@ -528,6 +544,7 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
     random_sleep(0, 1)
 
     current_supplier_index = 0
+    loopCount = 0
     for _ in range(number_of_suppliers_to_contact):
         for j in range(current_supplier_index, len(text_elements)):
             #Close inquiry tab if any
@@ -552,18 +569,31 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
                 print(f"Failed to get supplier name for search term: {search_term}, index: {j}, exception: {e}")
                 continue
             
+            allProdutsDist = read_pickle_file(current_products_loc)
+            print(allProdutsDist)
+            print('print(allProdutsDist) -------------------------')
+
+            print(supplier_name)
+            allProdutsDist[rfq_info[1]]["suppliers"].append(supplier_name)
+            savePklFIle(current_products_loc,allProdutsDist)
+
+            print("++++++++++++++++++++next ++++++++++++++++")
             random_sleep(0, 1)
             if supplier_name not in supplier_set:
                 #Store supplier to avoid duplicates
                 current_supplier_index = j
                 supplier_set.add(supplier_name)
 
+                print("++++++++++++++++++++next 2 ++++++++++++++++")
+                print(rfq_info)
                 #See if supplier is already in chat
                 quantity = rfq_info[0]
                 rfq_product_name = rfq_info[1]
                 image_url = rfq_info[2]
                 max_exw_price = rfq_info[3]
                 max_size = rfq_info[4]
+                print("++++++++++++++++++++next 3 ++++++++++++++++")
+
                 description_tuple = (quantity, rfq_product_name, image_url, max_exw_price, max_size)
                 with chat_product_lock:
                     if supplier_name in chat_product_dict:
@@ -574,6 +604,7 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
                             print("image_button_break")
                             break
                     #Else statements for adding to product dict is later to ensure message is sent
+                print("++++++++++++++++++++next 3 ++++++++++++++++")
 
                 #Contact supplier
                 random_sleep(1, 2)
@@ -584,6 +615,7 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
                 except Exception as e:
 
                     raise ValueError(f"Failed to click supplier image for search term: {search_term}, index: {j}, exception: {e}")
+                print("++++++++++++++++++++next 4 ++++++++++++++++")
 
                 #Switch window view
                 print("#Switch window view")
@@ -603,6 +635,7 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
 
                         # random_sleep(50, 5000)
     
+                print("++++++++++++++++++++next 5 ++++++++++++++++")
 
                 #Click Contact Supplier button
                 isNoSuchElement = 0
@@ -647,7 +680,8 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
                     # check_error = input("Error in sending message2. Continue? (y/n)")
                     # if check_error.lower() == 'n':
                         # driver.quit()
-
+            loopCount = loopCount +1
+            if loopCount > 10:
                 break
 
     return supplier_set
@@ -824,6 +858,10 @@ def delete_chat_convo(driver, supplier_name = None):
         pass
 
 def monitor_chats(driver, wait):
+    # we are not using monitor function from this file.
+    # for monitor use monitor.py file instead
+    
+    
     global chat_step_dict
     global chat_step_lock
     global chat_product_dict
@@ -986,7 +1024,7 @@ def monitor_chats(driver, wait):
                             continue
                         new_message_array.append(new_message_text)
                         print(f"++++2+++++++++++++++++++++++{new_message_text}+++++++++++++++++")    
-                    break
+                    # break
                 except Exception as e:
                     print(e)
                     if (iter >= max_retries):
@@ -1043,6 +1081,7 @@ def monitor_chats(driver, wait):
             iter = 0
             current_chat_step_string = "\n".join(chat_step_array)
             print(f"current_chat_step_string :: {current_chat_step_string}")
+            print(f"new_messages :: {new_messages}")
             
             chat_tuple = (current_chat_step_string, new_messages)
             while True:
@@ -1325,7 +1364,7 @@ def main(amazon_info_list):
 
     #Send initial messages
     prompt = "all" #input("All or just monitor (all/m)? ")
-    if prompt.lower() == 'all2':
+    if prompt.lower() == 'all':
         first_search = False
         for i, item_row in enumerate(data[:current_len_amazon_info]):
             #Get ASIN info
@@ -1360,7 +1399,10 @@ def main(amazon_info_list):
             simplified_titles = None
             title_prompt = f'Initial title: {title}'
             title_model = "titles"
-            response = query_openai(title_prompt, title_model)
+            # Not need to simplifiend the title
+            # response = query_openai(title_prompt, title_model)
+            response = title
+
             if response:
                 simplified_titles = response.split("\n")
                 simplified_titles = [re.sub(r'^\s*[\d]+[).]\s*|^\s*-\s*', '', title).strip() for title in simplified_titles if title.strip()]
@@ -1383,12 +1425,14 @@ def main(amazon_info_list):
 
 
         # Monitor chats
-        monitor_chats(driver, wait)
+        # monitor_chats(driver, wait)
     else:
         print("--------monitor_chats-------------")
         monitor_chats(driver, wait)
 
-
+def savePklFIle(file_path,fileData):
+    with open(file_path, 'wb') as file:
+        pickle.dump(fileData, file)
 
 # Start Web server for send & Receive data
 from flask import Flask, request, jsonify
@@ -1410,17 +1454,25 @@ def send_data():
     data=data['products']
     print("type=======================> : " + str(issubclass(type(data), str)))
     try:
+        clear_chat_dicts()
+        temp = {}
+        for product in data:
+            temp[product[1]]={}
+            temp[product[1]]["search_terms"] = product
+            temp[product[1]]["flag_search_completed"] = False
+            temp[product[1]]["suppliers"] =[]
+
+        allProdutsDist = temp
+        savePklFIle(current_products_loc,temp)
         main(data)
-    except:
-        print("Something else went wrong")    
+    except Exception as e:  
+        print(e)    
     return jsonify({"status":"true"})
 
 if __name__ == '__main__':
     app.run(port=8000)
     # main()
 
-
-    
 
 
 # response = api_call("https://script.google.com/macros/s/AKfycbyunwGw8sIwyphrO2K04xrf5zBgXC_VxPvuy1dStmu7V_DV104KK39H7xUMZHo86lHH/exec", "POST", {"key": "value"})
