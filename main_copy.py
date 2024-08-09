@@ -64,7 +64,8 @@ def is_json(variable):
 load_dotenv()
 
 # Now you can access the API key using os.getenv
-api_key = "sk-api"
+api_key = "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"
+           
 
 #Global Variables
 max_wait_time = 60
@@ -226,6 +227,8 @@ def query_openai(prompt, model, max_retries=max_retries):
                     response_format={"type": "json_object"}
                 )
                 print(f"[188] response = {response}")
+                print(response.choices[0].message.content)
+                print("++++++++++++7.1+++++response.choices[0].message.content++++++++++++++++++++++++++++++++++++++++++++++")
             return response.choices[0].message.content
         except OpenAI.RateLimitError:
             wait_time = base_wait * math.pow(2, i)  # Exponential backoff formula
@@ -824,6 +827,10 @@ def delete_chat_convo(driver, supplier_name = None):
         pass
 
 def monitor_chats(driver, wait):
+    # we are not using monitor function from this file.
+    # for monitor use monitor.py file instead
+    
+    
     global chat_step_dict
     global chat_step_lock
     global chat_product_dict
@@ -986,7 +993,7 @@ def monitor_chats(driver, wait):
                             continue
                         new_message_array.append(new_message_text)
                         print(f"++++2+++++++++++++++++++++++{new_message_text}+++++++++++++++++")    
-                    break
+                    # break
                 except Exception as e:
                     print(e)
                     if (iter >= max_retries):
@@ -1043,6 +1050,7 @@ def monitor_chats(driver, wait):
             iter = 0
             current_chat_step_string = "\n".join(chat_step_array)
             print(f"current_chat_step_string :: {current_chat_step_string}")
+            print(f"new_messages :: {new_messages}")
             
             chat_tuple = (current_chat_step_string, new_messages)
             while True:
@@ -1325,7 +1333,7 @@ def main(amazon_info_list):
 
     #Send initial messages
     prompt = "all" #input("All or just monitor (all/m)? ")
-    if prompt.lower() == 'all2':
+    if prompt.lower() == 'all':
         first_search = False
         for i, item_row in enumerate(data[:current_len_amazon_info]):
             #Get ASIN info
@@ -1383,7 +1391,7 @@ def main(amazon_info_list):
 
 
         # Monitor chats
-        monitor_chats(driver, wait)
+        # monitor_chats(driver, wait)
     else:
         print("--------monitor_chats-------------")
         monitor_chats(driver, wait)
