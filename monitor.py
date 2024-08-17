@@ -174,6 +174,7 @@ def read_pickle_file(file_path):
         with open(file_path, 'rb') as file:
             data = pickle.load(file)
             print(data)
+            return data
     except Exception as e:
         print(f"An error occurred while reading the pickle file: {e}")
 
@@ -248,23 +249,27 @@ def load_monitor():
         # check id supplier is present in current_products
          
         current_products = read_pickle_file(current_products_loc)
+        print('----------------------********************************* -------------------------')
         print(current_products)
-        print('print(current_products) -------------------------')
+        print('----------------------print(current_products) -------------------------')
 
         # current_products[current_supplier_name]["suppliers"]
         # savePklFIle(current_products_loc,current_products)
 
         flagSupplierFound = False
+        supplierKey = -1
         # First loop to iterate over the items in the outer dictionary
         for key, value in current_products.items():
-            # Second loop to iterate over the list of suppliers
-            for supplier in value['suppliers']:
-                if supplier == current_supplier_name_txt:
-                    # If we find the supplier, print it
-                    print(supplier)
-                    print(key)
-                    print("+++++++++++++++++++++++++++6.8++++++++++++++++")
-                    flagSupplierFound= True
+            if value['flag_search_completed'] == False:
+                # Second loop to iterate over the list of suppliers
+                for supplier in value['suppliers']:
+                    if supplier == current_supplier_name_txt:
+                        # If we find the supplier, print it
+                        supplierKey=key
+                        print(supplier)
+                        print(key)
+                        print("+++++++++++++++++++++++++++6.8++++++++++++++++")
+                        flagSupplierFound= True
         
         if flagSupplierFound == False : 
             continue
@@ -316,9 +321,23 @@ def load_monitor():
         replyTxtBox=messanger_container.find_element(By.CLASS_NAME, "send-textarea")
         try:
             replyTxtBox.click()
-            replyTxtBox.send_keys(aiResponse["reply_message"])
-            random_sleep(5,7)
-            replyTxtBox.send_keys(Keys.ENTER)
+            print("*******************************")
+            
+            
+            print(aiResponse["reply_message"])
+            print(":::::::::::::::::::::::::::::::reply_message::::::::::::::::::::::::::::")
+            
+            
+            lines = aiResponse["reply_message"].splitlines()
+            # Iterate through each line and send it to the chat box
+            for line in lines:
+                replyTxtBox.send_keys(line)  # Send the line
+                replyTxtBox.send_keys(Keys.ENTER) 
+
+            print("wait for button")
+            time.sleep(3)
+            print("wait completed for button")
+            # replyTxtBox.send_keys(Keys.ENTER)
             # random_sleep(4,6)
         except Exception as e:
             print(e)
@@ -326,6 +345,14 @@ def load_monitor():
             print(aiResponse["extracted_answers"])
             sellerData[current_supplier_name_txt]=aiResponse["extracted_answers"]
             savePklFIle(chat_dict_loc,sellerData)
+            current_products = read_pickle_file(current_products_loc)
+
+
+            current_products[current_supplier_name_txt]['suppliers'][supplierKey]=aiResponse["extracted_answers"]
+            current_products[current_supplier_name_txt]['flag_search_completed']=aiResponse["flag_kill_thread"]
+
+            savePklFIle(current_products_loc,current_products)
+            
         except Exception as e:
             print(e)
 
@@ -336,5 +363,7 @@ def load_monitor():
 
 
     time.sleep(400)
+
+
 
 load_monitor()

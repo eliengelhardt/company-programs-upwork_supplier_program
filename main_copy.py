@@ -453,6 +453,9 @@ def final_input_interaction(driver, wait, description_tuple, supplier_name ,uniq
 
     async_thread = threading.Thread(target=write_dict_to_file, args=(chat_dict_loc, chat_product_dict, chat_product_lock))
     async_thread.start()
+    
+    random_sleep(1,2)
+    create_chat_steps(supplier_name)
 
     #Close inquiry tab
     random_sleep(0, 1)
