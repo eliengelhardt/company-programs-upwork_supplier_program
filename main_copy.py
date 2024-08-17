@@ -75,7 +75,7 @@ def is_json(variable):
 load_dotenv()
 
 # Now you can access the API key using os.getenv
-api_key = "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"
+api_key = ""
            
 
 #Global Variables
