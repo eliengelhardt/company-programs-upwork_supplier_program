@@ -5,6 +5,7 @@ api_key = ""
   
     
 import requests
+import schedule
 
 def api_call(request_url, request_method, payload_body=None):
     try:
@@ -65,6 +66,14 @@ chat_dict_loc = "chat_product_dict.pkl"
 chat_step_dict_loc = "chat_step_dict.pkl"
 current_products_loc = "current_products.pkl"
 
+def getProductName(data,supplier_to_find):
+    # Find the root key containing the supplier
+    productName = None
+    for key, value in data.items():
+        if 'suppliers' in value and supplier_to_find in value['suppliers']:
+            productName = key
+            break
+    return productName 
 
 def savePklFIle(file_path,fileData):
     with open(file_path, 'wb') as file:
@@ -133,6 +142,7 @@ def initialize_alibaba_search():
         random_sleep(0, 1)
         driver.get('https://www.alibaba.com/')
         print("Reload view with cookies")
+        random_sleep(1,3)
     else:
         #Sign in
         try:
@@ -282,6 +292,21 @@ def load_monitor():
         # click on first seller 
         element.click()
         random_sleep(3, 4)
+
+       
+        # # Scroll up 10 times
+        # message_item = driver.find_element(By.CLASS_NAME, 'message-item-wrapper')
+        # message_item.click()
+        # time.sleep(2)  # Wait for the scroll bar to appear
+
+        # scroll_height = 500  # Adjust the scroll height as needed
+        # for _ in range(20):
+        #     message_item.send_keys(Keys.PAGE_UP)
+        #     time.sleep(1)  # wait for a short time to see the effect
+        #     print("======================scroll===============================")
+        # random_sleep(40,60)
+        
+        
         messanger_container =  driver.find_element(By.CLASS_NAME, "messenger-content-container")
         all_mess_el = messanger_container.find_elements(By.CLASS_NAME, "message-item-wrapper")
 
@@ -342,28 +367,53 @@ def load_monitor():
         except Exception as e:
             print(e)
         try:
-            print(aiResponse["extracted_answers"])
             sellerData[current_supplier_name_txt]=aiResponse["extracted_answers"]
             savePklFIle(chat_dict_loc,sellerData)
             current_products = read_pickle_file(current_products_loc)
+            currentProductName=getProductName(current_products,current_supplier_name_txt)
+            
+            supplierIndex=current_products[currentProductName]['suppliers'].index(current_supplier_name_txt)
 
-
-            current_products[current_supplier_name_txt]['suppliers'][supplierKey]=aiResponse["extracted_answers"]
-            current_products[current_supplier_name_txt]['flag_search_completed']=aiResponse["flag_kill_thread"]
+            current_products[currentProductName]['suppliers'][supplierIndex] ={}
+            current_products[currentProductName]['suppliers'][supplierIndex]=aiResponse["extracted_answers"]
+            current_products[currentProductName]['flag_search_completed']=aiResponse["flag_kill_thread"]
+            
 
             savePklFIle(current_products_loc,current_products)
-            
         except Exception as e:
             print(e)
 
 
         # break loop for testing 
-        break
+        # break
+
+
+    # close the browser and complete the script
+    driver.quit()
 
 
 
-    time.sleep(400)
+    # time.sleep(400)
 
 
 
-load_monitor()
+
+# load_monitor()
+
+
+# Schedule the function to run every 5 minutes
+schedule.every(3).minutes.do(load_monitor)
+
+# Record the start time
+start_time = time.time()
+
+while True:
+    # Check if 50 minutes (3000 seconds) have passed
+    elapsed_time = time.time() - start_time
+    if elapsed_time > 30 * 60:  # 30 minutes in seconds
+        print("Terminating the triggers after 50 minutes.")
+        break  # Exit the loop and terminate the script
+
+    # Run the scheduled tasks
+    schedule.run_pending()
+    time.sleep(1)  # wait for 1 second
