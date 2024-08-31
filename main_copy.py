@@ -1342,14 +1342,18 @@ def add_google_sheet_link(product_name, link):
 
 
 
-def main(amazon_info_list):
+def main():
     # tuple1 = ("sup_name", "url", 40, "demention", "weight")
     # googleSheet('Replacement Fliter for Vacuum Shark iz163h Replacement Filter for Vacuum Shark iz163h,2 HEPA Filters and 12 Foam Felt Kit', tuple1)
     # input("googleSheet!")
 
     #Load Data
     data = read_data()
-    
+
+    print(data)
+    print(len(data))
+
+    return     
     #Load Current Chat State
     read_chat_dicts()
 
@@ -1394,7 +1398,7 @@ def main(amazon_info_list):
                 continue
 
 
-            main_image_url, title, uniqueID = amazon_info_list[i]
+            main_image_url, title, uniqueID = 9585
             print(f"++++++++++++++++++++4+++")
  
             print(f"[{i}] About to be Searched Title: {title}")
@@ -1429,9 +1433,6 @@ def main(amazon_info_list):
 
         # Monitor chats
         # monitor_chats(driver, wait)
-    else:
-        print("--------monitor_chats-------------")
-        monitor_chats(driver, wait)
 
 def savePklFIle(file_path,fileData):
     with open(file_path, 'wb') as file:
