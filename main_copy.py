@@ -75,7 +75,6 @@ def is_json(variable):
 load_dotenv()
 
 # Now you can access the API key using os.getenv
-
 api_key = ""
            
 
@@ -1434,10 +1433,6 @@ def main():
 
         # Monitor chats
         # monitor_chats(driver, wait)
-    else:
-        print("--------monitor_chats-------------")
-        monitor_chats(driver, wait)
-
 
 def savePklFIle(file_path,fileData):
     with open(file_path, 'wb') as file:

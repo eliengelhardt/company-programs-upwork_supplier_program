@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "alibaba-ss-service-acc",
+  "private_key_id": "ca88e0487a84e03bfa601d3980f08f2202d7f5be",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCokiHGXXaxDc2m\nrXP9b85pF/vDXenWm7z3PD8eokNZ/ahAwzxjGRnPOddY2WeneQoiWFHk4yIJwzOU\nptlfZZcT7T0YlRvLXqYVrXcnBl/ov46b9yIbmUUfy4byNDQhZBk7pRDO5+XNodAO\nev9aWaUJNjYQkeUALBJ1H7lm4rHZNtnlYpYEusx3fetxwOWiOOypXWuDVoCziu/Z\nNZSuMwr4KCD1yNsz2BtUFghCIi78Ig1SDNrgPwCATk3vM6MQWJ+GjqP9QUL+rM/g\nWU2kTKhNrWnMplbSS3pzpgImAphedgC9xLa9sKnfkwyjCirJAuwqhcAueIrtGBdl\nazJFafzHAgMBAAECggEAApfY5X8g6SFaurKBYx0vXNuDF811NZlzYzmYiPqbCaKG\nzj7n9L2j8YBPc+zy6hceakqB3AEIetj3YqqHE9ocDwY/wds4Bb1g1bAznInoZiFd\nlWr2/zCw6QfNqCKDHh5hlagjkDiYsZHzLD3aeW6BRO6CD2gx0HpdFaiAHCPm833y\nRoTeeawoWO5nc77jebKR7aO+kc7TtOzS27KHbYcKrSAd7uWgKmQjp30t5iZ3qBgn\nMNa1RtcDT1bvZkHo5iSh7V/YsjuSrOXygfzOWWlUb8Yhk9/SJhnL6YdDGSW3Izy7\nxNkKE6Wxo2rKQFT7rifzGjK4g5B+xk/iUyqB0MFh7QKBgQDg1Oh/ukPLEPxCEE+y\nyoDgwwJQ3uhzbTb2zZjmZ4E4sFRJyIk8IYmY45zocQ5DXJAGIArOi0u11eXT4KuJ\n7J+NM4xSQo0cU8uOb+e2WOLe2DG4tvmagTOC0Nt1OhrC3kfK+eCti5EffqM8lqAS\ncZzUNlu101EakKYZxdQKWGqfSwKBgQC/8JKM0lLxYWgLcVpfrlwX3aLeqPwJBVuE\nyLsplde7TNTiOBFZPM3iZBKxh25IVUK7D9aY89Wr1HSP7h6t158nOqWz77S5fIyu\nAl8jXUUBl7QktFHd0Ac/SZ5rd/NxNjxtppGSRMKocNNJsMWsudjNeTlkN0N0OA0a\n2sFwe2Ze9QKBgQCDf6NYiV37WDziet3SaaSFUSl6mVWFpVwfb9K8987ZlDBIU1UI\n6WisFnyAaxd3iJzoKDeJ5GjsumVIzkAmVFJhaMPqnOghqFUHQyZYPZa71eEG82X7\n2xOAsJ2a69gZH58H9axWdKn1rMDWwBZxkyex6vUq3KS0D+RGcLF7N4ltDwKBgDEu\nms68wgYZ+IgeFpM34V84Kpi1YkeJeObwbIz+WVYkHNSOm1trajIdhHC7DDY6qqu2\nJj3xFQo/mVKcKH5RJvXtYDJYNM3mrUGVV/1+08TRs5ZIIkYdHQ5Jde+Bv/59cESE\njv6U4fA5YNqcEjrtMDGOY3dbdcxc5HbCIRkKdbPVAoGALYUpSyybonI5Vek58PvH\nITt/WRSD7mp6LBmRyLkr8d9tOYOWZPfRhH+UygTpodpueouDOJYzjMUeFuc1dmVY\n7Vi9nsyVXnF9q8hrdZS+d5thumGCRVQRnWof5/k4OqTOdoD0nRIEK/x+iDxm5OyI\n7VsM+pOjO6HNQJ07t1HTZvg=\n-----END PRIVATE KEY-----\n",
+  "client_email": "alibaba-spreadsheet-service-ac@alibaba-ss-service-acc.iam.gserviceaccount.com",
+  "client_id": "116903486374624688443",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/alibaba-spreadsheet-service-ac%40alibaba-ss-service-acc.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
