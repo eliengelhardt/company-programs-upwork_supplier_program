@@ -19,7 +19,7 @@ def clear_pickle_file(file_path):
     except Exception as e:
         print(f"An error occurred: {e}")
 
-# clear_pickle_file("chat_product_dict.pkl")
+# clear_pickle_file("current_products.pkl")
 # clear_pickle_file("chat_step_dict.pkl")
 
 def read_pickle_file(file_path):
@@ -31,8 +31,9 @@ def read_pickle_file(file_path):
         print(f"An error occurred while reading the pickle file: {e}")
 
 # Replace 'your_pickle_file.pkl' with the path to your pickle file
-read_pickle_file("chat_product_dict.pkl")
-read_pickle_file("chat_step_dict.pkl")
+# read_pickle_file("chat_product_dict.pkl")
+read_pickle_file("amazon_info_list.pickle")
+# read_pickle_file("current_products.pkl")
 
 
 

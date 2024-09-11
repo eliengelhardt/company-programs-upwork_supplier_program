@@ -4,6 +4,17 @@
     
 import requests
 
+    
+def read_pickle_file(file_path):
+    try:
+        with open(file_path, 'rb') as file:
+            return pickle.load(file)
+            print(data)
+    except Exception as e:
+        print(f"An error occurred while reading the pickle file: {e}")
+
+
+
 def api_call(request_url, request_method, payload_body=None):
     try:
         print("-------------call API---------------")
@@ -64,7 +75,8 @@ def is_json(variable):
 load_dotenv()
 
 # Now you can access the API key using os.getenv
-api_key = "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"
+
+api_key = ""
            
 
 #Global Variables
@@ -79,7 +91,9 @@ index_step_dict_lock = threading.Lock()
 excel_lock = threading.Lock()
 chat_dict_loc = "chat_product_dict.pkl"
 chat_step_dict_loc = "chat_step_dict.pkl"
+current_products_loc = "current_products.pkl"
 
+global allProdutsDist
 
 
 def with_cooldown(func, max_attempts=5, initial_wait=3):
@@ -440,6 +454,9 @@ def final_input_interaction(driver, wait, description_tuple, supplier_name ,uniq
 
     async_thread = threading.Thread(target=write_dict_to_file, args=(chat_dict_loc, chat_product_dict, chat_product_lock))
     async_thread.start()
+    
+    random_sleep(1,2)
+    create_chat_steps(supplier_name)
 
     #Close inquiry tab
     random_sleep(0, 1)
@@ -531,6 +548,7 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
     random_sleep(0, 1)
 
     current_supplier_index = 0
+    loopCount = 0
     for _ in range(number_of_suppliers_to_contact):
         for j in range(current_supplier_index, len(text_elements)):
             #Close inquiry tab if any
@@ -555,18 +573,31 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
                 print(f"Failed to get supplier name for search term: {search_term}, index: {j}, exception: {e}")
                 continue
             
+            allProdutsDist = read_pickle_file(current_products_loc)
+            print(allProdutsDist)
+            print('print(allProdutsDist) -------------------------')
+
+            print(supplier_name)
+            allProdutsDist[rfq_info[1]]["suppliers"].append(supplier_name)
+            savePklFIle(current_products_loc,allProdutsDist)
+
+            print("++++++++++++++++++++next ++++++++++++++++")
             random_sleep(0, 1)
             if supplier_name not in supplier_set:
                 #Store supplier to avoid duplicates
                 current_supplier_index = j
                 supplier_set.add(supplier_name)
 
+                print("++++++++++++++++++++next 2 ++++++++++++++++")
+                print(rfq_info)
                 #See if supplier is already in chat
                 quantity = rfq_info[0]
                 rfq_product_name = rfq_info[1]
                 image_url = rfq_info[2]
                 max_exw_price = rfq_info[3]
                 max_size = rfq_info[4]
+                print("++++++++++++++++++++next 3 ++++++++++++++++")
+
                 description_tuple = (quantity, rfq_product_name, image_url, max_exw_price, max_size)
                 with chat_product_lock:
                     if supplier_name in chat_product_dict:
@@ -577,6 +608,7 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
                             print("image_button_break")
                             break
                     #Else statements for adding to product dict is later to ensure message is sent
+                print("++++++++++++++++++++next 3 ++++++++++++++++")
 
                 #Contact supplier
                 random_sleep(1, 2)
@@ -587,6 +619,7 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
                 except Exception as e:
 
                     raise ValueError(f"Failed to click supplier image for search term: {search_term}, index: {j}, exception: {e}")
+                print("++++++++++++++++++++next 4 ++++++++++++++++")
 
                 #Switch window view
                 print("#Switch window view")
@@ -606,6 +639,7 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
 
                         # random_sleep(50, 5000)
     
+                print("++++++++++++++++++++next 5 ++++++++++++++++")
 
                 #Click Contact Supplier button
                 isNoSuchElement = 0
@@ -650,7 +684,8 @@ def send_initial_message(driver, wait, search_term, rfq_info, first_search, supp
                     # check_error = input("Error in sending message2. Continue? (y/n)")
                     # if check_error.lower() == 'n':
                         # driver.quit()
-
+            loopCount = loopCount +1
+            if loopCount > 10:
                 break
 
     return supplier_set
@@ -1308,14 +1343,18 @@ def add_google_sheet_link(product_name, link):
 
 
 
-def main(amazon_info_list):
+def main():
     # tuple1 = ("sup_name", "url", 40, "demention", "weight")
     # googleSheet('Replacement Fliter for Vacuum Shark iz163h Replacement Filter for Vacuum Shark iz163h,2 HEPA Filters and 12 Foam Felt Kit', tuple1)
     # input("googleSheet!")
 
     #Load Data
     data = read_data()
-    
+
+    print(data)
+    print(len(data))
+
+    return     
     #Load Current Chat State
     read_chat_dicts()
 
@@ -1360,7 +1399,7 @@ def main(amazon_info_list):
                 continue
 
 
-            main_image_url, title, uniqueID = amazon_info_list[i]
+            main_image_url, title, uniqueID = 9585
             print(f"++++++++++++++++++++4+++")
  
             print(f"[{i}] About to be Searched Title: {title}")
@@ -1368,7 +1407,10 @@ def main(amazon_info_list):
             simplified_titles = None
             title_prompt = f'Initial title: {title}'
             title_model = "titles"
-            response = query_openai(title_prompt, title_model)
+            # Not need to simplifiend the title
+            # response = query_openai(title_prompt, title_model)
+            response = title
+
             if response:
                 simplified_titles = response.split("\n")
                 simplified_titles = [re.sub(r'^\s*[\d]+[).]\s*|^\s*-\s*', '', title).strip() for title in simplified_titles if title.strip()]
@@ -1397,6 +1439,9 @@ def main(amazon_info_list):
         monitor_chats(driver, wait)
 
 
+def savePklFIle(file_path,fileData):
+    with open(file_path, 'wb') as file:
+        pickle.dump(fileData, file)
 
 # Start Web server for send & Receive data
 from flask import Flask, request, jsonify
@@ -1418,17 +1463,25 @@ def send_data():
     data=data['products']
     print("type=======================> : " + str(issubclass(type(data), str)))
     try:
+        clear_chat_dicts()
+        temp = {}
+        for product in data:
+            temp[product[1]]={}
+            temp[product[1]]["search_terms"] = product
+            temp[product[1]]["flag_search_completed"] = False
+            temp[product[1]]["suppliers"] =[]
+
+        allProdutsDist = temp
+        savePklFIle(current_products_loc,temp)
         main(data)
-    except:
-        print("Something else went wrong")    
+    except Exception as e:  
+        print(e)    
     return jsonify({"status":"true"})
 
 if __name__ == '__main__':
     app.run(port=8000)
     # main()
 
-
-    
 
 
 # response = api_call("https://script.google.com/macros/s/AKfycbyunwGw8sIwyphrO2K04xrf5zBgXC_VxPvuy1dStmu7V_DV104KK39H7xUMZHo86lHH/exec", "POST", {"key": "value"})
