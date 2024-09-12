@@ -1104,7 +1104,7 @@ def monitor_chats(driver, wait):
                         random_sleep(0, 1)
                         message_element.send_keys(Keys.SHIFT, Keys.ENTER)
 
-                input("Continue?")
+                # input("Continue?")
                 random_sleep(1, 2)
                 message_element.send_keys(Keys.ENTER)
             except:
@@ -1257,7 +1257,7 @@ def main():
     # tuple1 = ("sup_name", "url", 40, "demention", "weight")
     # googleSheet('Replacement Fliter for Vacuum Shark iz163h Replacement Filter for Vacuum Shark iz163h,2 HEPA Filters and 12 Foam Felt Kit', tuple1)
     # input("googleSheet!")
-
+    # clear_chat_dicts()
     #Load Data
     data = read_data()
     
@@ -1272,7 +1272,7 @@ def main():
     print(current_len_amazon_info)
 
     #Send initial messages
-    prompt = "all" #input("All or just monitor (all/m)? ")
+    prompt = input("All or just monitor (all/m)? ")
     if prompt.lower() == 'all':
         first_search = False
         for i, item_row in enumerate(data[:current_len_amazon_info]):
@@ -1336,7 +1336,7 @@ def main():
                 break
 
         #Monitor chats
-        # monitor_chats(driver, wait)
+        monitor_chats(driver, wait)
     else:
         monitor_chats(driver, wait)
 
