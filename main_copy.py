@@ -38,7 +38,7 @@ def is_json(variable):
 load_dotenv()
 
 # Now you can access the API key using os.getenv
-api_key = "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"
+api_key = "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"
 
 #Global Variables
 max_wait_time = 60
